@@ -1,0 +1,88 @@
+name: Build unsigned IPA
+
+# 在 GitHub 的 macOS 机器上出 ios 包，产物是未签名的 .ipa。
+# 未签名包不能直接装，需要用 Sideloadly / AltStore 用你自己的 Apple ID 签一次。
+# 详细步骤见 docs/BUILD_IPA.md
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Toolchain info
+        run: |
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i iphoneos || true
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # 关键：CODE_SIGNING_ALLOWED=NO
+      # 我们没有你的证书，跳过签名，产出裸的 .app。
+      # Sideloadly 之后会重新签，所以这里不需要任何证书配置。
+      - name: Build for device (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project BambuSlice.xcodeproj \
+            -scheme BambuSlice \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            build 2>&1 | tee build.log
+
+      - name: Show compiler errors
+        if: failure()
+        run: |
+          echo "::group::编译错误（前 60 条）"
+          grep -E "error:" build.log | head -60 || echo "没有匹配到 error:，看完整日志"
+          echo "::endgroup::"
+
+      - name: Package IPA
+        run: |
+          APP="build/Build/Products/Release-iphoneos/BambuSlice.app"
+          if [ ! -d "$APP" ]; then
+            echo "没找到 .app，实际产物如下："
+            ls -R build/Build/Products || true
+            exit 1
+          fi
+          rm -rf Payload BambuSlice-unsigned.ipa
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qry BambuSlice-unsigned.ipa Payload
+          echo "--- 产物 ---"
+          ls -lh BambuSlice-unsigned.ipa
+          unzip -l BambuSlice-unsigned.ipa | head -20
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BambuSlice-unsigned-ipa
+          path: BambuSlice-unsigned.ipa
+          retention-days: 30
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          retention-days: 7

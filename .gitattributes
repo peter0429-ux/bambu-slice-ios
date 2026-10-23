@@ -1,0 +1,21 @@
+# 换行统一用 LF。
+# 少了这个文件，Windows 上的 git 会把 shell 脚本 checkout 成 CRLF，
+# 拿到 macOS 上执行就是 "bash: ./make_ipa.sh: /usr/bin/env: bad interpreter"。
+* text=auto eol=lf
+
+*.sh        text eol=lf
+*.yml       text eol=lf
+*.cpp       text eol=lf
+*.hpp       text eol=lf
+*.mm        text eol=lf
+*.h         text eol=lf
+*.swift     text eol=lf
+*.md        text eol=lf
+*.plist     text eol=lf
+*.cmake     text eol=lf
+
+# 二进制，别做任何转换
+*.stl       binary
+*.png       binary
+*.ipa       binary
+*.a         binary

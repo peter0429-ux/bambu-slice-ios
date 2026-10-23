@@ -1,0 +1,31 @@
+# Xcode
+build/
+DerivedData/
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+*.xcuserstate
+*.moved-aside
+
+# 生成物
+Frameworks/libslic3r/
+Frameworks/boost/
+Frameworks/tbb/
+Frameworks/eigen/
+Frameworks/cgal/
+Frameworks/gmp/
+Frameworks/zlib/
+Frameworks/expat/
+*.a
+*.framework
+!Frameworks/.gitkeep
+
+# 依赖源码
+vendor/
+
+# macOS
+.DS_Store
+
+# 编辑器
+.vscode/
+.idea/

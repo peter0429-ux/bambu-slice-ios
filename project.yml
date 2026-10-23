@@ -1,0 +1,119 @@
+# XcodeGen 工程描述。
+# 用法：在仓库根目录执行 `xcodegen generate`，得到 BambuSlice.xcodeproj。
+#   安装 xcodegen:  brew install xcodegen
+#
+# 为什么不用手写 .xcodeproj：pbxproj 是机器生成的二进制式文本，
+# 手改容易在合并时炸掉。工程结构交给这个文件，.xcodeproj 作为产物忽略不入库。
+
+name: BambuSlice
+
+options:
+  bundleIdPrefix: com.example
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    # 注意：SWIFT_VERSION 只接受语言大版本（4.0 / 4.2 / 5.0 / 6.0）。
+    # 写 "5.9" 会被 xcodebuild 直接拒绝："SWIFT_VERSION '5.9' is unsupported"。
+    SWIFT_VERSION: "5.0"
+    # 内核是 C++，跨线程回调多；用 minimal 避免早期被 Actor 隔离检查卡住。
+    # 等桥接层稳定后再逐级提到 targeted。
+    SWIFT_STRICT_CONCURRENCY: minimal
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+    CLANG_CXX_LANGUAGE_STANDARD: "c++17"
+    CLANG_CXX_LIBRARY: "libc++"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    GCC_C_LANGUAGE_STANDARD: gnu11
+
+targets:
+
+  # ───────────────────────────────────────────────
+  # App：纯 SwiftUI + SceneKit
+  # ───────────────────────────────────────────────
+  BambuSlice:
+    type: application
+    platform: iOS
+    sources:
+      - path: BambuSlice
+        excludes:
+          - "Info.plist"
+    dependencies:
+      - target: BambuCore
+      - sdk: SceneKit.framework
+      - sdk: UIKit.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.bambuslice
+        PRODUCT_NAME: BambuSlice
+        INFOPLIST_FILE: BambuSlice/Info.plist
+        SWIFT_OBJC_BRIDGING_HEADER: BambuSlice/BambuSlice-Bridging-Header.h
+        HEADER_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/BambuCore/include
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_STYLE: Automatic
+        OTHER_LDFLAGS:
+          - $(inherited)
+          # 静态库里定义了 ObjC 类（BBSlicer），-ObjC 保证那部分目标文件一定被链接进来，
+          # 否则容易出 undefined symbol _OBJC_CLASS_$_BBSlicer
+          - -ObjC
+          - -lc++
+
+  # ───────────────────────────────────────────────
+  # 内核：C++17 + ObjC++，编成静态库
+  # ───────────────────────────────────────────────
+  BambuCore:
+    type: staticLibrary
+    platform: iOS
+    sources:
+      - path: BambuCore/src
+      - path: BambuCore/include
+        buildPhase: none
+    settings:
+      base:
+        PRODUCT_NAME: BambuCore
+        HEADER_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/BambuCore/include
+        GCC_PREPROCESSOR_DEFINITIONS:
+          - $(inherited)
+          # 0 = 用内置参考引擎；1 = 链接 libslic3r 真内核
+          - BAMBU_CORE_ENABLED=0
+        OTHER_CPLUSPLUSFLAGS:
+          - $(inherited)
+          - -fexceptions
+          - -frtti
+
+        # ─────────────────────────────────────────────
+        # 编好 libslic3r 之后，把上面改成 BAMBU_CORE_ENABLED=1，
+        # 并取消下面这些注释（路径按你的实际输出目录调整）：
+        #
+        # HEADER_SEARCH_PATHS:
+        #   - $(inherited)
+        #   - $(SRCROOT)/BambuCore/include
+        #   - $(SRCROOT)/Frameworks/libslic3r/include
+        #   - $(SRCROOT)/Frameworks/boost/include
+        #   - $(SRCROOT)/Frameworks/tbb/include
+        #   - $(SRCROOT)/Frameworks/eigen/include
+        #   - $(SRCROOT)/Frameworks/cgal/include
+        # OTHER_LDFLAGS:
+        #   - $(inherited)
+        #   - -L$(SRCROOT)/Frameworks/libslic3r/lib
+        #   - -lslic3r
+        #   - -L$(SRCROOT)/Frameworks/boost/lib -lboost_filesystem -lboost_thread -lboost_system -lboost_regex
+        #   - -L$(SRCROOT)/Frameworks/tbb/lib -ltbb
+        #   - -lz -lexpat -lpng -lqhull
+        # ─────────────────────────────────────────────
+
+schemes:
+  BambuSlice:
+    build:
+      targets:
+        BambuSlice: all
+    run:
+      config: Debug
+    archive:
+      config: Release
