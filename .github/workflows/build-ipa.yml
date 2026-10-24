@@ -63,18 +63,28 @@ jobs:
       - name: Show compiler errors
         if: failure()
         run: |
-          # 把编译错误变成 ::error:: 注解。注解通过 check-runs API 公开可读，
+          # 把关键诊断变成 ::error:: 注解。注解通过 check-runs API 公开可读，
           # 这样不用给 CI 配 token 也能定位问题。
-          if [ ! -f build.log ]; then
-            echo "::warning::build.log 不存在，编译可能没开始"
-            exit 0
+          ann() { sed 's/^/::error::/'; }
+
+          if [ -f xcodegen.log ]; then
+            echo "::error::── xcodegen 输出尾部 ──"; tail -8 xcodegen.log | ann
           fi
-          echo "::error::编译失败，以下是不重复的错误行："
-          grep -E "(^|[[:space:]])error:" build.log \
-            | awk '!seen[$0]++' \
-            | head -20 \
-            | sed 's/^/::error::/' || true
-          echo "::error::编译失败共 $(grep -cE '(^|[[:space:]])error:' build.log) 行 error"
+
+          if [ -d BambuSlice.xcodeproj ]; then
+            echo "::error::── 工程目录 ──"; ls -la BambuSlice.xcodeproj | head -6 | ann
+            echo "::error::── pbxproj 语法检查 ──"
+            plutil -lint BambuSlice.xcodeproj/project.pbxproj 2>&1 | ann || true
+            echo "::error::── xcodebuild -list ──"
+            xcodebuild -list -project BambuSlice.xcodeproj 2>&1 | head -12 | ann || true
+          else
+            echo "::error::BambuSlice.xcodeproj 不存在"
+          fi
+
+          if [ -f build.log ]; then
+            echo "::error::── build.log 尾部 ──"; tail -12 build.log | ann
+            echo "::error::共 $(grep -cE '(^|[[:space:]])error:' build.log) 行 error"
+          fi
 
       - name: Package IPA
         run: |
