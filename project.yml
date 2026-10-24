@@ -65,7 +65,9 @@ targets:
   # 内核：C++17 + ObjC++，编成静态库
   # ───────────────────────────────────────────────
   BambuCore:
-    type: staticLibrary
+    # 注意：XcodeGen 的类型名是点分写法 library.static，
+    # 写成 staticLibrary 会直接报 "Unknown Target type"。
+    type: library.static
     platform: iOS
     sources:
       - path: BambuCore/src
