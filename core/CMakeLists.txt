@@ -45,6 +45,8 @@ set(_excluded
     TexturePainting.cpp     # OpenCV
     FuzzySkin.cpp           # libnoise
     EdgeGrid.cpp            # libpng
+    PNGReadWrite.cpp        # libpng（贴图读写）
+    TextShape.cpp           # OCCT STEPCAFControl_Reader（文字浮雕，非必需）
 )
 
 file(STRINGS "${CMAKE_CURRENT_LIST_DIR}/sources.txt" _raw)
@@ -103,7 +105,8 @@ file(GLOB _qhull   "${BAMBU_SRC}/src/qhull/src/libqhull_r/*.c")
 file(GLOB _nest2d  "${BAMBU_SRC}/src/libnest2d/*.cpp")
 # clipper2 也是内联的，Clipper2Utils.cpp 需要它的实现
 file(GLOB _clipper "${BAMBU_SRC}/src/clipper2/Clipper2Lib/src/*.cpp")
-file(GLOB _tess    "${BAMBU_SRC}/src/glu-libtess/*.c")
+file(GLOB _tess    "${BAMBU_SRC}/src/glu-libtess/*.c"
+                   "${BAMBU_SRC}/src/glu-libtess/src/*.c")
 if(CORE_PROBE)
     set(_admesh "")
     set(_miniz "")
@@ -128,6 +131,8 @@ target_include_directories(slic3r PUBLIC
     "${BAMBU_SRC}/src/admesh"
     "${BAMBU_SRC}/src/clipper2/Clipper2Lib/include"
     "${BAMBU_SRC}/src/glu-libtess"
+    "${BAMBU_SRC}/src/glu-libtess/include"
+    "${BAMBU_SRC}/src/glu-libtess/src"
     "${BAMBU_SRC}/src/miniz"
     "${BAMBU_SRC}/src/libnest2d/include"
     "${BAMBU_SRC}/src/nlohmann"
