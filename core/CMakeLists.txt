@@ -130,10 +130,19 @@ target_compile_definitions(slic3r PUBLIC
 
 target_compile_features(slic3r PUBLIC cxx_std_17)
 
+# 他们的构建默认开 PCH（add_precompiled_header(libslic3r pchheader.hpp FORCEINCLUDE)），
+# 每个 TU 都会被强制 include 这个头。少了它，像 ClipperZUtils.hpp 这种
+# 「依赖前序 include 才认识 ExPolygon」的文件就会报 incomplete type。
+target_precompile_headers(slic3r PRIVATE
+    "${BAMBU_SRC}/src/libslic3r/pchheader.hpp")
+
 # libslic3r 大量用异常和 dynamic_cast，这两个必须开
 target_compile_options(slic3r PRIVATE
     -fexceptions
     -frtti
     # CommonCrypto 的 CC_MD5_* 在 iOS 13+ 标了 deprecated，只是警告，屏蔽掉
     -Wno-deprecated-declarations
+    # Boost QVM 的老写法（template 关键字后面没跟模板参数）在 Clang 16+ 是错误，
+    # 新版 Xcode 自带 Clang 26.x 会直接编不过，降级掉。
+    -Wno-missing-template-arg-list-after-template-kw
 )
