@@ -111,6 +111,17 @@ jobs:
           grep -nE "In file included from" build.log \
             | awk '!seen[$0]++' | tail -9 | sed 's/^/::error::/' || true
 
+      # 一次性列出「所有」缺失的头文件（去重+按出现次数排序），
+      # 比逐条报 file:line 有用得多——补路径一次补齐。
+      - name: 错误注解（缺失头文件汇总）
+        if: failure()
+        run: |
+          [ -f build.log ] || exit 0
+          grep -oE "fatal error: '[^']+' file not found" build.log \
+            | sed "s/fatal error: '//; s/' file not found//" \
+            | sort | uniq -c | sort -rn | head -9 \
+            | sed 's/^/::error::缺 /' || true
+
       - name: 报告产物
         if: success()
         run: |
