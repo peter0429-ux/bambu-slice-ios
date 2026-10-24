@@ -1,0 +1,62 @@
+name: Build iOS deps
+
+# M1 第一步：把 libslic3r 需要的外部依赖交叉编译成 iOS arm64 静态库。
+# 六个依赖并行为独立 job，谁成功谁失败一目了然。
+#
+# 产物同时上传为 artifact，供同一个 run 里的后续 job（编译 libslic3r）使用——
+# 同一个 run 内下载 artifact 不需要额外鉴权。
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "scripts/build_deps_ios.sh"
+      - "scripts/ios.toolchain.cmake"
+      - ".github/workflows/deps.yml"
+
+jobs:
+  deps:
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dep: [eigen, zlib, expat, tbb, boost, cgal]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-path
+
+      - name: Build ${{ matrix.dep }}
+        run: |
+          set -o pipefail
+          bash scripts/build_deps_ios.sh ${{ matrix.dep }} 2>&1 | tee dep.log
+
+      - name: Show errors
+        if: failure()
+        run: |
+          # 注解是公开可读的，这样不配 token 也能定位
+          grep -nE "error:|Error [0-9]|CMake Error|ld: |no such file|fatal error" dep.log \
+            | awk '!seen[$0]++' | head -10 | sed 's/^/::error::/' || true
+          echo "::error::最后 5 行:"; tail -5 dep.log | sed 's/^/::error::/' || true
+
+      - name: Upload dep
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dep-${{ matrix.dep }}
+          path: Frameworks/${{ matrix.dep }}
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Verify arch
+        if: success()
+        run: |
+          find Frameworks/${{ matrix.dep }} -name "*.a" | head -5 | while read f; do
+            echo "--- $f"
+            lipo -info "$f" || true
+            otool -l "$f" | grep -A3 LC_BUILD_VERSION | head -5 || true
+          done
