@@ -51,21 +51,54 @@ Bambu Studio 是个桌面程序，它的价值拆开看是这样：
 
 ## 2. 依赖矩阵
 
-| 依赖 | 必需 | 编译方式 | 坑 |
-|---|---|---|---|
-| Eigen | ✅ | header-only，拷目录 | 无 |
-| Boost | ✅ | `b2 target-os=iphone` | 只编 filesystem/thread/system/regex/iostreams；`nowide` 是随源码附带的不用单独编 |
-| TBB | ✅ | CMake + 我们的 toolchain | 必须 `TBB_BUILD_SHARED=OFF`；`tbbmalloc` 在 iOS 上用不了，会走系统 malloc |
-| CGAL | ✅ | 大多 header-only | 精确谓词要 GMP/MPFR，这两个是**最麻烦**的一环。先试不带的版本，`libslic3r/Geometry.hpp` 里真正用到精确运算的地方不多 |
-| zlib / expat / png | ✅ | CMake | 无 |
-| Qhull | ⚠️ | CMake | 只有 `3D convex hull` 相关代码用；不用可以 `-DUSE_QHULL=OFF` |
-| cereal | ⚠️ | header-only | 只在工程文件读写里用，可以不编 |
-| OpenCV / OpenEXR | ❌ | — | 只服务 GUI 的「多层涂色 / 贴图」，砍掉 |
-| libcurl / OpenSSL | ❌ | — | 只有网络功能要，砍掉 |
-| lib3mf | ⏸ | CMake | 要 3MF 才编，第一期不要 |
-| OpenCASCADE | ⏸ | — | STEP 支持，几十 MB，iPad 都嫌大 |
+> 下面这张表是**实测过**的（GitHub Actions / macos-latest / Xcode 26.6 / CMake 4）。
+> 六个依赖全部编成 iOS arm64 静态库通过，见 `.github/workflows/deps.yml`。
 
-> 版本号不要抄任何博客，直接看你要用的 tag 里 `deps/` 目录锁的版本。
+| 依赖 | 状态 | 编译方式 | 踩过的坑 |
+|---|---|---|---|
+| Eigen | ✅ 已验证 | header-only，拷 `Eigen/` 目录 | 无 |
+| Boost | ✅ 已验证 | `b2 target-os=iphone toolset=clang-ios` | **不能写 `abi=iphone`**，`<abi>` 只接受 aapcs/eabi/ms/n32/o32/sysv。写了直接报错退出 |
+| TBB | ✅ 已验证 | CMake + 我们的 toolchain | oneTBB 的 `cmake_minimum_required(VERSION 3.1)` 被 CMake 4 拒绝，要加 `-DCMAKE_POLICY_VERSION_MINIMUM=3.5` |
+| CGAL | ✅ 已验证 | header-only，拷 `CGAL/` | 精确谓词要 GMP/MPFR，本次未编（见下方风险） |
+| zlib | ✅ 已验证 | CMake + make | **不能用 `-G Xcode`**：会给 example/minigzip 生成 App target 然后卡签名；且 `zconf.h` 是 CMake 生成到 build 目录的，源码树里没有 |
+| expat | ✅ 已验证 | CMake | 无 |
+| GMP / MPFR | ⏸ 未做 | 需单独交叉编译 | libslic3r 的 `MeshBoolean` 走 OpenMeshCraft 时要它们；缺了就退到 MCUT（需 `SLIC3R_ALLOW_MCUT_BOOLEAN=ON`） |
+| Qhull / cereal / libnest2d / libigl / clipper2 / miniz / admesh | 📦 源码自带 | 随 BambuStudio 的 `src/` 一起编 | 不需要单独交叉编译 |
+| OpenCV / OpenEXR / OpenSSL / CURL / lib3mf | ❌ 不要 | — | 只服务 GUI、云、贴图，全部砍掉 |
+
+---
+
+## 2.1 关键结论：不能直接用他们的顶层 CMake
+
+这是实测出来的，也是整个移植里最容易走错的一步。
+
+BambuStudio 根目录的 `CMakeLists.txt` 里有这些**无条件**的语句：
+
+```cmake
+find_package(OpenSSL REQUIRED)
+find_package(CURL REQUIRED)        # APPLE 分支还要 CONFIG 模式
+find_package(OpenGL REQUIRED)
+find_package(GLEW REQUIRED)
+find_package(glfw3 REQUIRED)
+find_package(PNG REQUIRED)
+```
+
+注意：**它们不在 `if(SLIC3R_GUI)` 里面**。也就是说即使你传 `-DSLIC3R_GUI=OFF`，
+configure 阶段照样要求桌面 OpenGL 生态。GLEW / glfw3 在 iOS 上基本是死路
+（GLEW 是桌面 GL 扩展加载器，glfw3 的 iOS 支持是残缺的）。
+
+所以正确的做法是：**绕开他们的顶层 CMake，自己写一个只编 `libslic3r` 的工程。**
+
+规模是可控的：
+
+- `src/libslic3r/` 下 **225 个 .cpp**（根目录 127，GCode 18，Fill 17，SLA 14，Format 12，Arachne 系列 15，Geometry 7，Support 5…）
+- 第三方库大量内联在 `src/` 里：`eigen`(311 文件) `libigl`(1088) `qhull`(236) `clipper2` `admesh` `miniz` `minilzo` `libnest2d` `nlohmann` `mcut` `glu-libtess`
+- 也就是说需要外编的只有：boost / tbb / cgal / zlib / expat 这几个
+
+还有一个结构上的坑：他们内部把 CGAL 相关的代码拆成了**独立的 `libslic3r_cgal` 子目标**，
+并且 `MeshBoolean` 依赖 OpenMeshCraft（要 GMP/MPFR）或 MCUT。
+自己写 CMake 时要么把 `libslic3r_cgal` 一起编进来，要么把 `MeshBoolean.cpp` 排除并
+定义 `SLIC3R_ALLOW_MCUT_BOOLEAN`。
 
 ---
 
