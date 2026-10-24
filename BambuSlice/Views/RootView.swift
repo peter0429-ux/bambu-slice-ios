@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 struct RootView: View {
     @StateObject private var vm = SlicerViewModel()
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var showImporter = false
     @State private var showSettings = false
@@ -29,6 +30,18 @@ struct RootView: View {
             .padding(.bottom, 10)
         }
         .preferredColorScheme(.dark)
+        .task {
+            // 启动时自动扫描 App 文件夹（「文件」App 里拖进来的模型落在这里）
+            await vm.autoLoadFromDocuments()
+        }
+        .onChange(of: scenePhase) { phase in
+            guard phase == .active else { return }
+            Task { await vm.autoLoadFromDocuments() }
+        }
+        .onOpenURL { url in
+            // 从「文件」App 里「共享 / 用其他应用打开」进来
+            Task { await vm.importModel(from: url) }
+        }
         .fileImporter(isPresented: $showImporter,
                       allowedContentTypes: importTypes,
                       allowsMultipleSelection: false) { result in
@@ -240,10 +253,11 @@ struct RootView: View {
     }
 
     private var importTypes: [UTType] {
-        var types: [UTType] = []
-        if let stl = UTType(filenameExtension: "stl") { types.append(stl) }
-        if let obj = UTType(filenameExtension: "obj") { types.append(obj) }
-        return types.isEmpty ? [.data] : types
+        // 用 .item 全放开，是最稳的做法。
+        // 之前只给 stl/obj 的具体 UTI，碰上文件提供方报的动态 UTI 对不上，
+        // 文件在选择器里会变灰、点了没反应——用户看到的就是「导入了没反应」。
+        // 真正的格式校验放在内核里做，不支持时会给明确提示。
+        [.item]
     }
 }
 

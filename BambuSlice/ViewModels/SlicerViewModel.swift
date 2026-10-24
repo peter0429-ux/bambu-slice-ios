@@ -182,6 +182,34 @@ final class SlicerViewModel: ObservableObject {
 
     // MARK: - 私有
 
+    /// 扫 App 自己的 Documents 目录，找最新的一个模型文件。
+    /// 「文件」App 里把 STL 拖进 BambuSlice 文件夹，就是落在这里。
+    static func newestModelInDocuments() -> URL? {
+        let fm = FileManager.default
+        let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        guard let walker = fm.enumerator(at: docs,
+                                         includingPropertiesForKeys: [.contentModificationDateKey],
+                                         options: [.skipsHiddenFiles]) else { return nil }
+
+        var best: (URL, Date)?
+        for case let url as URL in walker {
+            let ext = url.pathExtension.lowercased()
+            guard ext == "stl" || ext == "obj" else { continue }
+            let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey])
+                .contentModificationDate) ?? .distantPast
+            if best == nil || date > best!.1 { best = (url, date) }
+        }
+        return best?.0
+    }
+
+    /// 启动或回到前台时，如果还没有模型，自动加载文件夹里最新的那个。
+    /// 这样「用文件 App 把 STL 拖进来」才真的能用。
+    func autoLoadFromDocuments() async {
+        guard mesh == nil, !isBusy else { return }
+        guard let url = Self.newestModelInDocuments() else { return }
+        await importModel(from: url)
+    }
+
     private func rebuildScene() {
         scene = SceneBuilder.buildScene(mesh: mesh, layers: layers, settings: settings)
     }
@@ -190,8 +218,15 @@ final class SlicerViewModel: ObservableObject {
     /// 立刻拷到沙盒里，后续内核随便读。
     private static func stash(_ url: URL) throws -> URL {
         let fm = FileManager.default
-        let dir = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("Imports", isDirectory: true)
+        let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0].resolvingSymlinksInPath()
+        let src = url.resolvingSymlinksInPath()
+
+        // 已经在自己的沙盒里（自动加载路径），再拷一次会把源文件删掉
+        if src.path.hasPrefix(docs.path) {
+            return src
+        }
+
+        let dir = docs.appendingPathComponent("Imports", isDirectory: true)
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
 
         let dest = dir.appendingPathComponent(url.lastPathComponent)
