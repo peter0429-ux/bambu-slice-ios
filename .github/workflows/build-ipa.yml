@@ -65,11 +65,15 @@ jobs:
       - name: Show compiler errors
         if: failure()
         run: |
-          # 注解每步上限 10 条，所以只输出最关键的信息，顺序即优先级
+          # 注解每步上限 10 条，所以只取去重后的前几条
           ann() { sed 's/^/::error::/'; }
-          { xcodebuild -version; xcodegen --version; } 2>&1 | head -3 | ann
-          grep -m1 objectVersion BambuSlice.xcodeproj/project.pbxproj 2>/dev/null | ann || true
-          xcodebuild -list -project BambuSlice.xcodeproj 2>&1 | head -6 | ann || true
+          if [ ! -f build.log ]; then
+            echo "::error::build.log 不存在"
+            exit 0
+          fi
+          n=$(grep -cE '(^|[[:space:]])error:' build.log || true)
+          echo "::error::共 ${n} 行 error，以下去重后前 9 条："
+          grep -E '(^|[[:space:]])error:' build.log | awk '!seen[$0]++' | head -9 | ann || true
 
       - name: Package IPA
         run: |
