@@ -22,7 +22,13 @@ using uint64 = unsigned long long;
 
 namespace cv {
 
-struct Size;
+// Size 必须定义在 Mat 之前：Mat::size() 里要构造 Size(cols, rows)
+struct Size {
+    int width = 0;
+    int height = 0;
+    Size() = default;
+    Size(int w, int h) : width(w), height(h) {}
+};
 
 // 必须是宏，不是枚举：调用方写的是不带 cv:: 的 CV_32FC3，
 // 用 enum 的话会出现 "use of undeclared identifier 'CV_32FC3'"。
@@ -146,13 +152,6 @@ struct Point2f {
     float y = 0;
     Point2f() = default;
     Point2f(float x_, float y_) : x(x_), y(y_) {}
-};
-
-struct Size {
-    int width = 0;
-    int height = 0;
-    Size() = default;
-    Size(int w, int h) : width(w), height(h) {}
 };
 
 struct Scalar {

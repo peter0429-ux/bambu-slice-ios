@@ -164,6 +164,11 @@ target_compile_features(slic3r PUBLIC cxx_std_17)
 # 注意：这里不用 target_precompile_headers —— CMake 生成 PCH 时用的是独立的
 # 编译命令，在 iOS 交叉编译下拿不到 sysroot，会报 'cassert' file not found。
 # 直接 -include 等价于 FORCEINCLUDE 的语义，只是没有预编译加速。
+# glu-libtess 的 .c 文件在 iOS SDK 下缺 <limits.h>（LONG_MAX 未声明），
+# 强制前置包含我们的兼容头。
+target_compile_options(slic3r PRIVATE
+    "$<$<COMPILE_LANGUAGE:C>:-include ${CMAKE_CURRENT_LIST_DIR}/shim/tess_compat.h>")
+
 # 关键：必须限定 COMPILE_LANGUAGE:CXX。
 # pchheader.hpp 里是 <cassert> 这类 C++ 头，套到 qhull/miniz 的 .c 文件上
 # 会让 C 编译器找不到 cassert（上一轮 20 个文件全挂在这）。
