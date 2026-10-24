@@ -39,10 +39,23 @@ configure_file("${CMAKE_CURRENT_LIST_DIR}/libslic3r_version.h.in"
 # ── 源文件：从他们 CMakeLists 的 set(lisbslic3r_sources) 抽出后剪枝 ──
 # sources.txt 是纯净清单（只有文件名，无注释）。这里再按扩展名过滤一次，
 # 双保险：只要出现杂行（空格、#、中文说明），都不会被当成源文件。
+# 这些文件依赖我们不打算移植的库（OpenCV / libnoise / libpng），
+# 从源文件里剔除。静态库归档不解析符号，只要没人调用就不会有链接问题。
+set(_excluded
+    TexturePainting.cpp     # OpenCV
+    FuzzySkin.cpp           # libnoise
+    EdgeGrid.cpp            # libpng
+)
+
 file(STRINGS "${CMAKE_CURRENT_LIST_DIR}/sources.txt" _raw)
 set(_srcs "")
 foreach(f IN LISTS _raw)
     if("${f}" MATCHES "\\.(cpp|mm|c)$")
+        get_filename_component(_bn "${f}" NAME)
+        if(_bn IN_LIST _excluded)
+            message(STATUS "  跳过 ${f}（依赖未移植的库）")
+            continue()
+        endif()
         list(APPEND _srcs "${BAMBU_SRC}/src/libslic3r/${f}")
     endif()
 endforeach()
@@ -88,15 +101,19 @@ file(GLOB _miniz   "${BAMBU_SRC}/src/miniz/*.c")
 file(GLOB _minilzo "${BAMBU_SRC}/src/minilzo/*.c")
 file(GLOB _qhull   "${BAMBU_SRC}/src/qhull/src/libqhull_r/*.c")
 file(GLOB _nest2d  "${BAMBU_SRC}/src/libnest2d/*.cpp")
+# clipper2 也是内联的，Clipper2Utils.cpp 需要它的实现
+file(GLOB _clipper "${BAMBU_SRC}/src/clipper2/*.cpp"
+                   "${BAMBU_SRC}/src/clipper2/*/*.cpp")
 if(CORE_PROBE)
     set(_admesh "")
     set(_miniz "")
     set(_minilzo "")
     set(_qhull "")
     set(_nest2d "")
+    set(_clipper "")
 endif()
 
-add_library(slic3r STATIC ${_srcs} ${_admesh} ${_miniz} ${_minilzo} ${_qhull} ${_nest2d})
+add_library(slic3r STATIC ${_srcs} ${_admesh} ${_miniz} ${_minilzo} ${_qhull} ${_nest2d} ${_clipper})
 
 target_include_directories(slic3r PUBLIC
     # shim 必须排在最前面：用 CommonCrypto 顶掉 openssl/md5.h、openssl/sha.h，
@@ -109,6 +126,9 @@ target_include_directories(slic3r PUBLIC
     "${BAMBU_SRC}/src/qhull/src"
     "${BAMBU_SRC}/src/admesh"
     "${BAMBU_SRC}/src/clipper2"
+    "${BAMBU_SRC}/src/clipper2/include"
+    "${BAMBU_SRC}/src/miniz"
+    "${BAMBU_SRC}/src/libnest2d/include"
     "${BAMBU_SRC}/src/nlohmann"
     "${CMAKE_CURRENT_BINARY_DIR}"
     "${DEPS}/boost/include"
