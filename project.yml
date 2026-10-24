@@ -87,9 +87,6 @@ targets:
     settings:
       base:
         PRODUCT_NAME: BambuCore
-        HEADER_SEARCH_PATHS:
-          - $(inherited)
-          - $(SRCROOT)/BambuCore/include
         GCC_PREPROCESSOR_DEFINITIONS:
           - $(inherited)
           # 0 = 用内置参考引擎；1 = 链接 libslic3r 真内核
