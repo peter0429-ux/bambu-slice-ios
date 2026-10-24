@@ -128,11 +128,15 @@ endif()
 # 的 hack；pchheader.hpp 里已 include 了无 Z 版 clipper.hpp，若给 clipper_z 也套
 # -include pchheader，guard 被先占，ClipperLib_Z 就定义不出来。故单独编、不套 PCH。
 add_library(clipper_z_obj OBJECT "${BAMBU_SRC}/src/clipper/clipper_z.cpp")
-# clipper.hpp 用 Eigen::Vector3d 做 Z 坐标，必须给 Eigen 头
+# src/clipper/clipper.cpp 是 libslic3r 魔改版：用 Eigen::Vector3d 做 Z 坐标、
+# 用 libslic3r/Int128.hpp 做高精度乘加。所以这些头路径都得给。
 target_include_directories(clipper_z_obj PRIVATE
+    "${BAMBU_SRC}/src"
+    "${BAMBU_SRC}/src/libslic3r"
     "${BAMBU_SRC}/src/clipper"
+    "${BAMBU_SRC}/src/eigen"
     "${DEPS}/eigen/include"
-    "${BAMBU_SRC}/src/eigen")
+    "${DEPS}/boost/include")
 
 add_library(slic3r STATIC ${_srcs} ${_admesh} ${_miniz} ${_minilzo} ${_qhull} ${_nest2d} ${_clipper} ${_qhullcpp} ${_semver} ${_tess} $<TARGET_OBJECTS:clipper_z_obj>)
 
