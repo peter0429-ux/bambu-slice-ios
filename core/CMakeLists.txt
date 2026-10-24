@@ -102,8 +102,8 @@ file(GLOB _minilzo "${BAMBU_SRC}/src/minilzo/*.c")
 file(GLOB _qhull   "${BAMBU_SRC}/src/qhull/src/libqhull_r/*.c")
 file(GLOB _nest2d  "${BAMBU_SRC}/src/libnest2d/*.cpp")
 # clipper2 也是内联的，Clipper2Utils.cpp 需要它的实现
-file(GLOB _clipper "${BAMBU_SRC}/src/clipper2/*.cpp"
-                   "${BAMBU_SRC}/src/clipper2/*/*.cpp")
+file(GLOB _clipper "${BAMBU_SRC}/src/clipper2/Clipper2Lib/src/*.cpp")
+file(GLOB _tess    "${BAMBU_SRC}/src/glu-libtess/*.c")
 if(CORE_PROBE)
     set(_admesh "")
     set(_miniz "")
@@ -111,9 +111,10 @@ if(CORE_PROBE)
     set(_qhull "")
     set(_nest2d "")
     set(_clipper "")
+    set(_tess "")
 endif()
 
-add_library(slic3r STATIC ${_srcs} ${_admesh} ${_miniz} ${_minilzo} ${_qhull} ${_nest2d} ${_clipper})
+add_library(slic3r STATIC ${_srcs} ${_admesh} ${_miniz} ${_minilzo} ${_qhull} ${_nest2d} ${_clipper} ${_tess})
 
 target_include_directories(slic3r PUBLIC
     # shim 必须排在最前面：用 CommonCrypto 顶掉 openssl/md5.h、openssl/sha.h，
@@ -125,8 +126,8 @@ target_include_directories(slic3r PUBLIC
     "${BAMBU_SRC}/src/libigl"
     "${BAMBU_SRC}/src/qhull/src"
     "${BAMBU_SRC}/src/admesh"
-    "${BAMBU_SRC}/src/clipper2"
-    "${BAMBU_SRC}/src/clipper2/include"
+    "${BAMBU_SRC}/src/clipper2/Clipper2Lib/include"
+    "${BAMBU_SRC}/src/glu-libtess"
     "${BAMBU_SRC}/src/miniz"
     "${BAMBU_SRC}/src/libnest2d/include"
     "${BAMBU_SRC}/src/nlohmann"
@@ -157,8 +158,11 @@ target_compile_features(slic3r PUBLIC cxx_std_17)
 # 注意：这里不用 target_precompile_headers —— CMake 生成 PCH 时用的是独立的
 # 编译命令，在 iOS 交叉编译下拿不到 sysroot，会报 'cassert' file not found。
 # 直接 -include 等价于 FORCEINCLUDE 的语义，只是没有预编译加速。
+# 关键：必须限定 COMPILE_LANGUAGE:CXX。
+# pchheader.hpp 里是 <cassert> 这类 C++ 头，套到 qhull/miniz 的 .c 文件上
+# 会让 C 编译器找不到 cassert（上一轮 20 个文件全挂在这）。
 target_compile_options(slic3r PRIVATE
-    -include "${BAMBU_SRC}/src/libslic3r/pchheader.hpp")
+    "$<$<COMPILE_LANGUAGE:CXX>:SHELL:-include ${BAMBU_SRC}/src/libslic3r/pchheader.hpp>")
 
 # libslic3r 大量用异常和 dynamic_cast，这两个必须开
 target_compile_options(slic3r PRIVATE
