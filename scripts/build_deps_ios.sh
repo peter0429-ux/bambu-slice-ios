@@ -60,12 +60,25 @@ build_eigen() {
 build_zlib() {
   log "zlib ${ZLIB_VERSION}"
   fetch "https://zlib.net/fossils/zlib-${ZLIB_VERSION}.tar.gz" "${WORK}/zlib"
-  cmake -S "${WORK}/zlib" -B "${WORK}/zlib/build-ios" -G Xcode \
+
+  # 不能用 -G Xcode：它会给 example / minigzip 生成 App target，
+  # 然后卡在「requires a development team」上。Makefile 生成器没这问题。
+  cmake -S "${WORK}/zlib" -B "${WORK}/zlib/build-ios" \
         -DCMAKE_TOOLCHAIN_FILE="${ROOT}/scripts/ios.toolchain.cmake" \
-        -DCMAKE_INSTALL_PREFIX="${FW}/zlib" \
         -DCMAKE_OSX_DEPLOYMENT_TARGET="${DEPLOYMENT_TARGET}" \
+        -DCMAKE_BUILD_TYPE=Release \
         -DBUILD_SHARED_LIBS=OFF
-  cmake --build "${WORK}/zlib/build-ios" --config Release --target install
+
+  # 只编静态库，跳过命令行工具
+  cmake --build "${WORK}/zlib/build-ios" -j"${JOBS}" --target zlibstatic --config Release
+
+  mkdir -p "${FW}/zlib/include" "${FW}/zlib/lib"
+  local lib
+  lib="$(find "${WORK}/zlib/build-ios" -name 'libz*.a' -type f | head -1)"
+  [ -n "${lib}" ] || { echo "没找到 libz.a"; return 1; }
+  cp "${lib}" "${FW}/zlib/lib/libz.a"
+  cp "${WORK}/zlib/zlib.h" "${WORK}/zlib/zconf.h" "${FW}/zlib/include/"
+  log "zlib 完成: ${FW}/zlib"
 }
 
 build_expat() {
@@ -88,15 +101,20 @@ build_expat() {
 build_tbb() {
   log "TBB ${TBB_VERSION}"
   fetch "https://github.com/oneapi-src/oneTBB/archive/refs/tags/${TBB_VERSION}.tar.gz" "${WORK}/tbb"
-  cmake -S "${WORK}/tbb" -B "${WORK}/tbb/build-ios" -G Xcode \
+
+  # oneTBB 的 cmake_minimum_required 写的是 3.1，CMake 4 直接拒绝，
+  # 用 CMAKE_POLICY_VERSION_MINIMUM 把兼容性下限放回去。
+  cmake -S "${WORK}/tbb" -B "${WORK}/tbb/build-ios" \
         -DCMAKE_TOOLCHAIN_FILE="${ROOT}/scripts/ios.toolchain.cmake" \
         -DCMAKE_INSTALL_PREFIX="${FW}/tbb" \
         -DCMAKE_OSX_DEPLOYMENT_TARGET="${DEPLOYMENT_TARGET}" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
         -DTBB_BUILD_SHARED=OFF \
         -DTBB_BUILD_STATIC=ON \
         -DTBB_TEST=OFF \
         -DTBB_STRICT=OFF
-  cmake --build "${WORK}/tbb/build-ios" --config Release --target install
+  cmake --build "${WORK}/tbb/build-ios" -j"${JOBS}" --config Release --target install
 }
 
 # ─────────────────────────────────────────────────────────────
@@ -119,14 +137,15 @@ using clang : ios
 ;
 EOF
 
-  # target-os=iphone + 指定 sysroot 是 b2 交叉到 iOS 的关键
+  # target-os=iphone 是 b2 交叉到 iOS 的关键。
+  # 注意：不能再写 abi=iphone —— <abi> 只接受 aapcs/eabi/ms/n32/o32/sysv 这些，
+  # 写上会直接报 "iphone is not a known value of feature <abi>"。
   ./b2 -j"${JOBS}" \
       toolset=clang-ios \
       target-os=iphone \
       architecture=arm \
       address-model=64 \
       binary-format=mach-o \
-      abi=iphone \
       variant=release \
       link=static \
       runtime-link=static \
