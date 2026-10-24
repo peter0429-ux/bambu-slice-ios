@@ -27,12 +27,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 每个依赖单独缓存：脚本或 toolchain 变了才重编。
+      # 命中时整轮从 6 分钟降到 30 秒。
+      - name: Cache ${{ matrix.dep }}
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: Frameworks/${{ matrix.dep }}
+          key: iosdep-${{ matrix.dep }}-${{ hashFiles('scripts/build_deps_ios.sh', 'scripts/ios.toolchain.cmake') }}
+
       - name: Toolchain
         run: |
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-path
 
       - name: Build ${{ matrix.dep }}
+        if: steps.cache.outputs.cache-hit != 'true'
         run: |
           set -o pipefail
           bash scripts/build_deps_ios.sh ${{ matrix.dep }} 2>&1 | tee dep.log
