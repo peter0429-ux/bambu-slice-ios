@@ -84,17 +84,22 @@ jobs:
           # 免得一轮只修一个错、白白多跑十轮
           cmake --build build-core -j"$(sysctl -n hw.ncpu)" -- -k 0 2>&1 | tee build.log
 
-      - name: 错误注解
+      # 注解每步上限 10 条，所以拆成两步拿双份预算
+      - name: 错误注解（编译错误）
         if: failure()
         run: |
           for f in cfg.log build.log; do
             [ -f "$f" ] || continue
-            echo "::error::── $f ──"
-            # -A2 是必须的：CMake 的真正原因写在 "CMake Error at ..." 的下一行，
-            # 只抓错误行会得到一堆没有信息量的位置信息。
-            grep -nE -A2 "error:|CMake Error|fatal error" "$f" \
-              | awk '!seen[$0]++' | head -8 | sed 's/^/::error::/' || true
+            # -A2 必须：CMake 的真正原因写在 "CMake Error at ..." 的下一行
+            grep -nE "error:|Error [0-9]|fatal error|undefined|No such file" "$f" \
+              | awk '!seen[$0]++' | head -9 | sed "s/^/::error::[$f] /" || true
           done
+
+      - name: 错误注解（日志尾部）
+        if: failure()
+        run: |
+          [ -f build.log ] && tail -9 build.log | sed 's/^/::error::/'
+          [ -f cfg.log ] && grep -nE -A2 "CMake Error" cfg.log | head -9 | sed 's/^/::error::/' || true
 
       - name: 报告产物
         if: success()
