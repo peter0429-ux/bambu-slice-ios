@@ -56,6 +56,20 @@ if(_n EQUAL 0)
     message(FATAL_ERROR "sources.txt 没解析出任何源文件，检查格式")
 endif()
 
+# 提前把缺失的源文件挑出来并一次性报全，
+# 否则 add_library 只会含糊地报 "Cannot find source file"。
+set(_missing "")
+foreach(s IN LISTS _srcs)
+    if(NOT EXISTS "${s}")
+        get_filename_component(_bn "${s}" NAME)
+        list(APPEND _missing "${_bn}")
+    endif()
+endforeach()
+if(_missing)
+    list(LENGTH _missing _mn)
+    message(FATAL_ERROR "[missing-sources] ${_mn} 个文件不存在: ${_missing}")
+endif()
+
 if(CORE_PROBE)
     # 挑几个有代表性的：boost 用得多、clipper 用得多、基础几何
     set(_probe

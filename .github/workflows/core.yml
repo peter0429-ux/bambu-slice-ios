@@ -90,7 +90,9 @@ jobs:
           for f in cfg.log build.log; do
             [ -f "$f" ] || continue
             echo "::error::── $f ──"
-            grep -nE "error:|CMake Error|fatal error" "$f" \
+            # -A2 是必须的：CMake 的真正原因写在 "CMake Error at ..." 的下一行，
+            # 只抓错误行会得到一堆没有信息量的位置信息。
+            grep -nE -A2 "error:|CMake Error|fatal error" "$f" \
               | awk '!seen[$0]++' | head -8 | sed 's/^/::error::/' || true
           done
 
