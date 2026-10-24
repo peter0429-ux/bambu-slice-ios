@@ -29,6 +29,16 @@ enum ImwriteFlags {
     IMWRITE_PNG_COMPRESSION = 16
 };
 
+// 常见像素格式常量（OpenCV 的编码规则：深度 | 通道数<<3）
+enum MatTypes {
+    CV_8UC1  = 0,
+    CV_8UC3  = 16,
+    CV_8UC4  = 24,
+    CV_32FC1 = 5,
+    CV_32FC3 = 21,
+    CV_32FC4 = 29
+};
+
 class Mat {
 public:
     Mat() = default;
@@ -47,6 +57,19 @@ public:
     const unsigned char *ptr() const { return nullptr; }
     Mat clone() const { return *this; }
     Mat &operator=(const Mat &) = default;
+
+    // ObjColorUtils 会用 at<Vec3f>(y, x) 取像素。桩实现返回静态哑元，
+    // 只要不真的读图就不会有问题——这些代码路径我们本来就不执行。
+    template <typename T>
+    T &at(int = 0, int = 0) {
+        static T dummy{};
+        return dummy;
+    }
+    template <typename T>
+    const T &at(int = 0, int = 0) const {
+        static T dummy{};
+        return dummy;
+    }
 };
 
 struct Point {
@@ -68,6 +91,24 @@ struct Size {
     int height = 0;
     Size() = default;
     Size(int w, int h) : width(w), height(h) {}
+};
+
+struct Scalar {
+    double v[4] = {0, 0, 0, 0};
+    Scalar() = default;
+    Scalar(double a, double b = 0, double c = 0, double d = 0) { v[0]=a; v[1]=b; v[2]=c; v[3]=d; }
+};
+
+// ObjColorUtils 用到 TermCriteria（迭代终止条件）
+class TermCriteria {
+public:
+    enum Type { COUNT = 1, MAX_ITER = 1, EPS = 2 };
+    TermCriteria() = default;
+    TermCriteria(int type_, int maxCount_, double epsilon_)
+        : type(type_), maxCount(maxCount_), epsilon(epsilon_) {}
+    int type = 0;
+    int maxCount = 0;
+    double epsilon = 0.0;
 };
 
 template <typename T, int N>

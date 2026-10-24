@@ -47,6 +47,7 @@ set(_excluded
     EdgeGrid.cpp            # libpng
     PNGReadWrite.cpp        # libpng（贴图读写）
     TextShape.cpp           # OCCT STEPCAFControl_Reader（文字浮雕，非必需）
+    Arrange.cpp             # libnest2d 的 NLopt 优化器（多物件自动排布，单物件切片用不到）
 )
 
 file(STRINGS "${CMAKE_CURRENT_LIST_DIR}/sources.txt" _raw)
