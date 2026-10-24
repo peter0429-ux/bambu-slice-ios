@@ -106,6 +106,11 @@ file(GLOB _qhull   "${BAMBU_SRC}/src/qhull/src/libqhull_r/*.c")
 file(GLOB _nest2d  "${BAMBU_SRC}/src/libnest2d/*.cpp")
 # clipper2 也是内联的，Clipper2Utils.cpp 需要它的实现
 file(GLOB _clipper "${BAMBU_SRC}/src/clipper2/Clipper2Lib/src/*.cpp")
+# libslic3r 里 Brim.cpp 等还引用老版 clipper（ClipperLib_Z），以及新版 qhull 的
+# C++ 接口（orgQhull::Qhull）和 semver C 库。这些不编进去，链接时缺符号。
+file(GLOB _clipper_old "${BAMBU_SRC}/src/clipper/*.cpp")
+file(GLOB _qhullcpp   "${BAMBU_SRC}/src/qhull/src/qhull/*.cpp")
+file(GLOB _semver     "${BAMBU_SRC}/src/semver/semver.c")
 file(GLOB _tess    "${BAMBU_SRC}/src/glu-libtess/*.c"
                    "${BAMBU_SRC}/src/glu-libtess/src/*.c")
 if(CORE_PROBE)
@@ -115,10 +120,13 @@ if(CORE_PROBE)
     set(_qhull "")
     set(_nest2d "")
     set(_clipper "")
+    set(_clipper_old "")
+    set(_qhullcpp "")
+    set(_semver "")
     set(_tess "")
 endif()
 
-add_library(slic3r STATIC ${_srcs} ${_admesh} ${_miniz} ${_minilzo} ${_qhull} ${_nest2d} ${_clipper} ${_tess})
+add_library(slic3r STATIC ${_srcs} ${_admesh} ${_miniz} ${_minilzo} ${_qhull} ${_nest2d} ${_clipper} ${_clipper_old} ${_qhullcpp} ${_semver} ${_tess})
 
 target_include_directories(slic3r PUBLIC
     # shim 必须排在最前面：用 CommonCrypto 顶掉 openssl/md5.h、openssl/sha.h，
@@ -131,6 +139,8 @@ target_include_directories(slic3r PUBLIC
     "${BAMBU_SRC}/src/qhull/src"
     "${BAMBU_SRC}/src/admesh"
     "${BAMBU_SRC}/src/clipper2/Clipper2Lib/include"
+    "${BAMBU_SRC}/src/clipper"
+    "${BAMBU_SRC}/src/semver"
     "${BAMBU_SRC}/src/glu-libtess"
     "${BAMBU_SRC}/src/glu-libtess/include"
     "${BAMBU_SRC}/src/glu-libtess/src"

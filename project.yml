@@ -67,7 +67,7 @@ targets:
           - -L$(SRCROOT)/Frameworks/boost/lib
           - -lboost_filesystem -lboost_thread -lboost_system -lboost_regex
           - -L$(SRCROOT)/Frameworks/tbb/lib
-          - -ltbb
+          - -ltbb -ltbbmalloc
           - -L$(SRCROOT)/Frameworks/zlib/lib
           - -lz
           - -L$(SRCROOT)/Frameworks/expat/lib
