@@ -108,7 +108,6 @@ file(GLOB _nest2d  "${BAMBU_SRC}/src/libnest2d/*.cpp")
 file(GLOB _clipper "${BAMBU_SRC}/src/clipper2/Clipper2Lib/src/*.cpp")
 # libslic3r 里 Brim.cpp 等还引用老版 clipper（ClipperLib_Z），以及新版 qhull 的
 # C++ 接口（orgQhull::Qhull）和 semver C 库。这些不编进去，链接时缺符号。
-file(GLOB _clipper_old "${BAMBU_SRC}/src/clipper/*.cpp")
 file(GLOB _qhullcpp   "${BAMBU_SRC}/src/qhull/src/qhull/*.cpp")
 file(GLOB _semver     "${BAMBU_SRC}/src/semver/semver.c")
 file(GLOB _tess    "${BAMBU_SRC}/src/glu-libtess/*.c"
@@ -120,13 +119,18 @@ if(CORE_PROBE)
     set(_qhull "")
     set(_nest2d "")
     set(_clipper "")
-    set(_clipper_old "")
     set(_qhullcpp "")
     set(_semver "")
     set(_tess "")
 endif()
 
-add_library(slic3r STATIC ${_srcs} ${_admesh} ${_miniz} ${_minilzo} ${_qhull} ${_nest2d} ${_clipper} ${_clipper_old} ${_qhullcpp} ${_semver} ${_tess})
+# 老版 clipper 的 Z 版。clipper_z.cpp 是 #define CLIPPERLIB_USE_XYZ + include "clipper.cpp"
+# 的 hack；pchheader.hpp 里已 include 了无 Z 版 clipper.hpp，若给 clipper_z 也套
+# -include pchheader，guard 被先占，ClipperLib_Z 就定义不出来。故单独编、不套 PCH。
+add_library(clipper_z_obj OBJECT "${BAMBU_SRC}/src/clipper/clipper_z.cpp")
+target_include_directories(clipper_z_obj PRIVATE "${BAMBU_SRC}/src/clipper")
+
+add_library(slic3r STATIC ${_srcs} ${_admesh} ${_miniz} ${_minilzo} ${_qhull} ${_nest2d} ${_clipper} ${_qhullcpp} ${_semver} ${_tess} $<TARGET_OBJECTS:clipper_z_obj>)
 
 target_include_directories(slic3r PUBLIC
     # shim 必须排在最前面：用 CommonCrypto 顶掉 openssl/md5.h、openssl/sha.h，
