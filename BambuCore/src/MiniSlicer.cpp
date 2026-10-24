@@ -423,6 +423,97 @@ void infill_lines(const std::vector<Path> &loops, double spacing,
 }
 
 // ─────────────────────────────────────────────────────────────
+// 支撑：把每层轮廓栅格化，然后逐列自上而下扫，找出「上面有料、下面悬空」的区间
+// ─────────────────────────────────────────────────────────────
+//
+// 这是简化实现，不是 libslic3r 那种基于悬垂角的精确算法：
+//   - 用 1 层的高度差近似「悬垂」，所以接近水平的悬空面会被识别，
+//     45° 左右的斜坡因为每层外扩量小于栅格精度，不会被误判成悬空。
+//   - 支撑是垂直柱，不做倾斜、不做与模型的间隙、不做接触面加密。
+// 目的只是让预览里能看见支撑，真打印请用真内核。
+
+struct Mask {
+    int w = 0, h = 0;
+    std::vector<uint8_t> bits;
+
+    bool inside(int ix, int iy) const {
+        if (ix < 0 || iy < 0 || ix >= w || iy >= h) return false;
+        return bits[size_t(iy) * size_t(w) + size_t(ix)] != 0;
+    }
+};
+
+Mask rasterize(const std::vector<Path> &loops, int w, int h, double x0, double y0, double cell) {
+    Mask m;
+    m.w = w;
+    m.h = h;
+    m.bits.assign(size_t(w) * size_t(h), 0);
+
+    std::vector<double> xs;
+    for (int iy = 0; iy < h; ++iy) {
+        const double y = y0 + (iy + 0.5) * cell;
+        xs.clear();
+        for (const auto &lp : loops) {
+            if (!lp.closed || lp.pts.size() < 3) continue;
+            const size_t n = lp.pts.size();
+            for (size_t i = 0; i < n; ++i) {
+                const V2 A = lp.pts[i], B = lp.pts[(i + 1) % n];
+                if ((A.y <= y && B.y > y) || (B.y <= y && A.y > y)) {
+                    const double t = (y - A.y) / (B.y - A.y);
+                    xs.push_back(A.x + (B.x - A.x) * t);
+                }
+            }
+        }
+        if (xs.size() < 2) continue;
+        std::sort(xs.begin(), xs.end());
+        for (size_t k = 0; k + 1 < xs.size(); k += 2) {
+            int a = static_cast<int>(std::ceil((xs[k] - x0) / cell - 0.5));
+            int b = static_cast<int>(std::floor((xs[k + 1] - x0) / cell - 0.5));
+            a = std::max(a, 0);
+            b = std::min(b, w - 1);
+            for (int ix = a; ix <= b; ++ix) m.bits[size_t(iy) * size_t(w) + size_t(ix)] = 1;
+        }
+    }
+    return m;
+}
+
+std::vector<std::vector<std::pair<V2, V2>>>
+compute_support(const std::vector<std::vector<Path>> &layer_loops,
+                double x0, double y0, int w, int h, double cell) {
+    const size_t n = layer_loops.size();
+    std::vector<std::vector<std::pair<V2, V2>>> out(n);
+    if (n < 2) return out;
+
+    std::vector<Mask> masks;
+    masks.reserve(n);
+    for (size_t i = 0; i < n; ++i)
+        masks.push_back(rasterize(layer_loops[i], w, h, x0, y0, cell));
+
+    const double half = std::max(cell * 0.45, 0.3);
+
+    // 逐列遍历，每列只走一遍层数组，避免 O(层数²)
+    for (int iy = 0; iy < h; ++iy) {
+        for (int ix = 0; ix < w; ++ix) {
+            int last_solid = -1;
+            for (size_t j = 0; j < n; ++j) {
+                const bool solid = masks[j].inside(ix, iy);
+                if (!solid) continue;
+
+                // 中间隔了至少一层空，说明第 j 层这块是悬空的
+                if (last_solid >= 0 && static_cast<int>(j) - last_solid > 1) {
+                    const double px = x0 + (ix + 0.5) * cell;
+                    const double py = y0 + (iy + 0.5) * cell;
+                    for (int k = last_solid + 1; k < static_cast<int>(j); ++k) {
+                        out[size_t(k)].emplace_back(V2{px - half, py}, V2{px + half, py});
+                    }
+                }
+                last_solid = static_cast<int>(j);
+            }
+        }
+    }
+    return out;
+}
+
+// ─────────────────────────────────────────────────────────────
 // G-code 输出
 // ─────────────────────────────────────────────────────────────
 
@@ -589,10 +680,44 @@ bool slice(const std::string &path,
     em.header(path.substr(path.find_last_of("/\\") + 1));
 
     const double flow_width = s.nozzle_diameter * 1.05;
-    const double speed_outer = 120.0, speed_inner = 180.0, speed_infill = 200.0;
+    const double speed_outer = 120.0, speed_inner = 180.0;
+    const double speed_infill = 200.0, speed_support = 80.0;
 
-    std::vector<Seg> segs;
-    std::vector<Path> loops;
+    // ── 第一遍：算出每层轮廓。支撑要看纵向关系，不能边算层边输出。
+    std::vector<std::vector<Path>> all_loops(layer_count);
+    {
+        std::vector<Seg> segs;
+        for (size_t li = 0; li < layer_count; ++li) {
+            if (g_cancel.load()) { error = "已取消"; return false; }
+            slice_plane(tris, zs[li], segs);
+            all_loops[li] = stitch(segs);
+            report(0.05f + 0.45f * static_cast<float>(li + 1) / static_cast<float>(layer_count),
+                   fmt("切片中 %zu/%zu 层", li + 1, layer_count));
+        }
+    }
+
+    // ── 第二遍：支撑
+    std::vector<std::vector<std::pair<V2, V2>>> support(layer_count);
+    if (s.support_enabled) {
+        report(0.55f, "生成支撑");
+
+        double minx = 1e30, miny = 1e30, maxx = -1e30, maxy = -1e30;
+        for (const auto &ls : all_loops)
+            for (const auto &lp : ls)
+                for (const auto &p : lp.pts) {
+                    minx = std::min(minx, p.x); maxx = std::max(maxx, p.x);
+                    miny = std::min(miny, p.y); maxy = std::max(maxy, p.y);
+                }
+
+        if (maxx > minx && maxy > miny) {
+            const double cell = std::max(1.0, std::max(maxx - minx, maxy - miny) / 300.0);
+            const int w = static_cast<int>(std::ceil((maxx - minx) / cell)) + 1;
+            const int h = static_cast<int>(std::ceil((maxy - miny) / cell)) + 1;
+            support = compute_support(all_loops, minx, miny, w, h, cell);
+        }
+    }
+
+    // ── 第三遍：出 G-code
     std::vector<std::pair<V2, V2>> infill;
 
     for (size_t li = 0; li < layer_count; ++li) {
@@ -600,9 +725,7 @@ bool slice(const std::string &path,
 
         const double z = zs[li];
         const double h = (li == 0) ? std::min(s.first_layer_height, height) : s.layer_height;
-
-        slice_plane(tris, z, segs);
-        loops = stitch(segs);
+        const std::vector<Path> &loops = all_loops[li];
 
         em.begin_layer(li, z);
 
@@ -630,8 +753,15 @@ bool slice(const std::string &path,
             }
         }
 
-        report(0.05f + 0.9f * static_cast<float>(li + 1) / static_cast<float>(layer_count),
-               fmt("切片中 %zu/%zu 层", li + 1, layer_count));
+        // 支撑
+        if (!support[li].empty()) {
+            em.feature("Support");
+            for (const auto &sg : support[li])
+                em.segment(sg.first, sg.second, speed_support, flow_width * 0.9, h);
+        }
+
+        report(0.60f + 0.40f * static_cast<float>(li + 1) / static_cast<float>(layer_count),
+               fmt("生成路径 %zu/%zu 层", li + 1, layer_count));
     }
 
     em.footer(layer_count);
@@ -643,11 +773,11 @@ bool slice(const std::string &path,
     out.filament_grams = vol_mm3 * 0.00124;   // PLA 密度 1.24 g/cm³
     out.layer_count = layer_count;
     out.backend = "mini-ref";
-    out.warnings.push_back("参考引擎：不生成支撑/桥接，G-code 仅供预览，请勿直接上机打印");
+    out.warnings.push_back("参考引擎：G-code 仅供预览，请勿直接上机打印");
     if (s.support_enabled)
-        out.warnings.push_back("已请求支撑，但参考引擎不支持，实际输出无支撑");
+        out.warnings.push_back("支撑为简化的垂直柱（无倾斜、无间隙），仅用于预览");
     if (s.brim_enabled)
-        out.warnings.push_back("已请求 Brim，但参考引擎不支持，实际输出无 Brim");
+        out.warnings.push_back("已请求 Brim，但参考引擎不生成 Brim");
 
     report(1.0f, "完成");
     return true;

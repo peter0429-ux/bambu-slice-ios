@@ -7,6 +7,44 @@ struct SettingsSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                        ForEach(SlicePreset.all) { preset in
+                            Button {
+                                settings.apply(preset)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack(spacing: 4) {
+                                        Text(preset.name)
+                                            .font(.subheadline.weight(.semibold))
+                                        if settings.matchedPreset == preset {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .font(.caption2)
+                                        }
+                                    }
+                                    Text(preset.detail)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(9)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .fill(settings.matchedPreset == preset
+                                              ? Color.accentColor.opacity(0.18)
+                                              : Color.secondary.opacity(0.10))
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                } header: {
+                    Text("预设")
+                } footer: {
+                    Text("点一下套用整组参数，下面的滑杆会跟着变。改动任意一项就变成「自定义」。")
+                }
+
                 Section("打印机") {
                     Picker("机型", selection: $settings.printer) {
                         ForEach(PrinterPreset.all) { p in
