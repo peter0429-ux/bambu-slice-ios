@@ -131,10 +131,14 @@ target_compile_definitions(slic3r PUBLIC
 target_compile_features(slic3r PUBLIC cxx_std_17)
 
 # 他们的构建默认开 PCH（add_precompiled_header(libslic3r pchheader.hpp FORCEINCLUDE)），
-# 每个 TU 都会被强制 include 这个头。少了它，像 ClipperZUtils.hpp 这种
-# 「依赖前序 include 才认识 ExPolygon」的文件就会报 incomplete type。
-target_precompile_headers(slic3r PRIVATE
-    "${BAMBU_SRC}/src/libslic3r/pchheader.hpp")
+# 每个 TU 都被强制 include 这个头。少了它，像 ClipperZUtils.hpp 这种
+# 「依赖前序 include 才认识 ExPolygon」的文件会报 incomplete type。
+#
+# 注意：这里不用 target_precompile_headers —— CMake 生成 PCH 时用的是独立的
+# 编译命令，在 iOS 交叉编译下拿不到 sysroot，会报 'cassert' file not found。
+# 直接 -include 等价于 FORCEINCLUDE 的语义，只是没有预编译加速。
+target_compile_options(slic3r PRIVATE
+    -include "${BAMBU_SRC}/src/libslic3r/pchheader.hpp")
 
 # libslic3r 大量用异常和 dynamic_cast，这两个必须开
 target_compile_options(slic3r PRIVATE

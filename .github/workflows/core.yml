@@ -102,6 +102,15 @@ jobs:
           [ -f build.log ] && tail -9 build.log | sed 's/^/::error::/'
           [ -f cfg.log ] && grep -nE -A2 "CMake Error" cfg.log | head -9 | sed 's/^/::error::/' || true
 
+      # 缺头文件时，真正有用的是 include 链：谁把 OCCT / OpenCV 的头拖进来的。
+      # Clang 会在 fatal error 前打印 "In file included from ..."，全抓出来。
+      - name: 错误注解（include 链）
+        if: failure()
+        run: |
+          [ -f build.log ] || exit 0
+          grep -nE "In file included from" build.log \
+            | awk '!seen[$0]++' | tail -9 | sed 's/^/::error::/' || true
+
       - name: 报告产物
         if: success()
         run: |
