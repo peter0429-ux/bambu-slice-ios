@@ -80,9 +80,10 @@ jobs:
       - name: Build
         run: |
           set -o pipefail
-          # -k 0 让 make 遇错继续，一次把所有错误都暴露出来，
-          # 免得一轮只修一个错、白白多跑十轮
-          cmake --build build-core -j"$(sysctl -n hw.ncpu)" -- -k 0 2>&1 | tee build.log
+          # -k（不带参数）：遇错继续，一次暴露多个错误。
+          # 注意 GNU make 的 -k 不接受数字，写成 "-k 0" 会被当成目标名，
+          # 直接 "No rule to make target 0" 秒退。
+          cmake --build build-core -j"$(sysctl -n hw.ncpu)" -- -k 2>&1 | tee build.log
 
       # 注解每步上限 10 条，所以拆成两步拿双份预算
       - name: 错误注解（编译错误）
