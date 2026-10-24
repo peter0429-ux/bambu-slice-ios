@@ -66,6 +66,9 @@ jobs:
         run: |
           lipo -info build-core/libslic3r.a | grep -q arm64 \
             || { echo "::error::libslic3r.a 不是 arm64"; exit 1; }
+          # boost 头完整性断言：b2 --with 模式下 optional.hpp 不会自动装
+          test -f Frameworks/boost/include/boost/optional.hpp \
+            || { echo "::error::boost 头不全（缺 optional.hpp）"; exit 1; }
 
       - name: Pack bundle
         run: |

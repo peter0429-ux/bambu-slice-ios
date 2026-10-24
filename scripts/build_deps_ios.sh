@@ -159,6 +159,12 @@ EOF
       install 2>&1 | tail -40
 
   popd >/dev/null
+
+  # 关键：b2 install --with-libraries 只装「选中库」的头文件子集，
+  # boost/optional 这类 header-only 的头不在其中，libslic3r 的 Semver.hpp
+  # 一 include 就炸。把源码树的全量头（约 6500 个）覆盖进去补齐。
+  cp -R "${WORK}/boost/boost" "${FW}/boost/include/"
+  log "boost 全量头文件已补齐: $(ls "${FW}/boost/include/boost" | wc -l) 项"
 }
 
 # ─────────────────────────────────────────────────────────────
