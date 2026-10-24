@@ -61,6 +61,17 @@ targets:
           # 否则容易出 undefined symbol _OBJC_CLASS_$_BBSlicer
           - -ObjC
           - -lc++
+          # libslic3r 及其依赖（真内核）。链接发生在 App target，不在 BambuCore 静态库上。
+          - -L$(SRCROOT)/Frameworks/libslic3r/lib
+          - -lslic3r
+          - -L$(SRCROOT)/Frameworks/boost/lib
+          - -lboost_filesystem -lboost_thread -lboost_system -lboost_regex
+          - -L$(SRCROOT)/Frameworks/tbb/lib
+          - -ltbb
+          - -L$(SRCROOT)/Frameworks/zlib/lib
+          - -lz
+          - -L$(SRCROOT)/Frameworks/expat/lib
+          - -lexpat
 
   # ───────────────────────────────────────────────
   # 内核：C++17 + ObjC++，编成静态库
@@ -82,32 +93,32 @@ targets:
         GCC_PREPROCESSOR_DEFINITIONS:
           - $(inherited)
           # 0 = 用内置参考引擎；1 = 链接 libslic3r 真内核
-          - BAMBU_CORE_ENABLED=0
+          - BAMBU_CORE_ENABLED=1
         OTHER_CPLUSPLUSFLAGS:
           - $(inherited)
           - -fexceptions
           - -frtti
-
-        # ─────────────────────────────────────────────
-        # 编好 libslic3r 之后，把上面改成 BAMBU_CORE_ENABLED=1，
-        # 并取消下面这些注释（路径按你的实际输出目录调整）：
-        #
-        # HEADER_SEARCH_PATHS:
-        #   - $(inherited)
-        #   - $(SRCROOT)/BambuCore/include
-        #   - $(SRCROOT)/Frameworks/libslic3r/include
-        #   - $(SRCROOT)/Frameworks/boost/include
-        #   - $(SRCROOT)/Frameworks/tbb/include
-        #   - $(SRCROOT)/Frameworks/eigen/include
-        #   - $(SRCROOT)/Frameworks/cgal/include
-        # OTHER_LDFLAGS:
-        #   - $(inherited)
-        #   - -L$(SRCROOT)/Frameworks/libslic3r/lib
-        #   - -lslic3r
-        #   - -L$(SRCROOT)/Frameworks/boost/lib -lboost_filesystem -lboost_thread -lboost_system -lboost_regex
-        #   - -L$(SRCROOT)/Frameworks/tbb/lib -ltbb
-        #   - -lz -lexpat -lpng -lqhull
-        # ─────────────────────────────────────────────
+        # libslic3r 及其内联第三方的头。vendor-src 由 CI 在 ipa 构建时解包，
+        # 目录结构与 core/CMakeLists.txt 里的 include 列表一一对应。
+        HEADER_SEARCH_PATHS:
+          - $(inherited)
+          - $(SRCROOT)/BambuCore/include
+          - $(SRCROOT)/BambuCore/third_party/vendor-src
+          - $(SRCROOT)/BambuCore/third_party/vendor-src/libslic3r
+          - $(SRCROOT)/BambuCore/third_party/vendor-src/admesh
+          - $(SRCROOT)/BambuCore/third_party/vendor-src/clipper2/Clipper2Lib/include
+          - $(SRCROOT)/BambuCore/third_party/vendor-src/libnest2d/include
+          - $(SRCROOT)/BambuCore/third_party/vendor-src/glu-libtess
+          - $(SRCROOT)/BambuCore/third_party/vendor-src/glu-libtess/src
+          - $(SRCROOT)/BambuCore/third_party/vendor-src/miniz
+          - $(SRCROOT)/BambuCore/third_party/vendor-src/qhull/src
+          - $(SRCROOT)/Frameworks/boost/include
+          - $(SRCROOT)/Frameworks/tbb/include
+          - $(SRCROOT)/Frameworks/eigen/include
+          - $(SRCROOT)/Frameworks/cgal/include
+          - $(SRCROOT)/Frameworks/zlib/include
+          - $(SRCROOT)/Frameworks/expat/include
+          - $(SRCROOT)/Frameworks/cereal/include
 
 schemes:
   BambuSlice:

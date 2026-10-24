@@ -17,7 +17,76 @@ on:
   pull_request:
 
 jobs:
+  # ── 先编 libslic3r（deps 有缓存，命中时秒过）──────────────
+  # .a 几十 MB 不进 git，用 artifact 在同一次 run 里传给 build job
+  core:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache deps
+        id: depcache
+        uses: actions/cache@v4
+        with:
+          path: Frameworks
+          key: iosdeps-all-${{ hashFiles('scripts/build_deps_ios.sh', 'scripts/ios.toolchain.cmake') }}
+
+      - name: Build deps
+        if: steps.depcache.outputs.cache-hit != 'true'
+        run: |
+          set -o pipefail
+          bash scripts/build_deps_ios.sh all 2>&1 | tee deps.log
+
+      - name: Fetch BambuStudio source
+        run: |
+          curl -L --retry 3 -o bs.tar.gz \
+            "https://codeload.github.com/bambulab/BambuStudio/tar.gz/refs/heads/master"
+          mkdir -p vendor
+          tar -xzf bs.tar.gz -C vendor --strip-components=1
+
+      - name: Build libslic3r
+        run: |
+          set -o pipefail
+          cmake -S core -B build-core \
+            -DCMAKE_TOOLCHAIN_FILE="$PWD/scripts/ios.toolchain.cmake" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBAMBU_SRC="$PWD/vendor" 2>&1 | tee core-cfg.log
+          cmake --build build-core -j"$(sysctl -n hw.ncpu)" -- -k 2>&1 | tee core-build.log
+
+      - name: Show core errors
+        if: failure()
+        run: |
+          for f in core-cfg.log core-build.log deps.log; do
+            [ -f "$f" ] || continue
+            grep -nE "error:|CMake Error|fatal error" "$f" \
+              | awk '!seen[$0]++' | head -9 | sed "s/^/::error::[$f] /" || true
+          done
+
+      - name: Arch assert
+        run: |
+          lipo -info build-core/libslic3r.a | grep -q arm64 \
+            || { echo "::error::libslic3r.a 不是 arm64"; exit 1; }
+
+      - name: Pack bundle
+        run: |
+          mkdir -p bundle/Frameworks/libslic3r/lib
+          cp build-core/libslic3r.a bundle/Frameworks/libslic3r/lib/
+          tar -czf bundle/frameworks.tgz -C bundle Frameworks
+          # 头文件包：排除 libigl/eigen（eigen 用 deps 里的）与实现文件
+          tar -czf bundle/vendor-headers.tgz \
+            --exclude='src/libigl' --exclude='src/eigen' \
+            --exclude='*.cpp' --exclude='*.c' --exclude='*.mm' \
+            -C vendor src
+          ls -lh bundle
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: core-bundle
+          path: bundle
+          retention-days: 7
+
   build:
+    needs: core
     # 用 latest 而不是 macos-14：新版 XcodeGen 生成的工程格式较新，
     # 老镜像自带的 Xcode 会报 "Unable to read project"。
     runs-on: macos-latest
@@ -33,6 +102,24 @@ jobs:
         run: |
           xcodebuild -version
           xcodebuild -showsdks | grep -i iphoneos || true
+
+      - name: Fetch core bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: core-bundle
+          path: core-bundle
+
+      - name: Unpack core bundle
+        run: |
+          tar -xzf core-bundle/frameworks.tgz
+          mkdir -p BambuCore/third_party
+          tar -xzf core-bundle/vendor-headers.tgz -C BambuCore/third_party
+          mv BambuCore/third_party/src BambuCore/third_party/vendor-src
+          echo "--- Frameworks ---"
+          ls Frameworks
+          echo "--- libslic3r.a ---"
+          ls -lh Frameworks/libslic3r/lib/libslic3r.a
+          lipo -info Frameworks/libslic3r/lib/libslic3r.a
 
       - name: Install XcodeGen
         run: brew install xcodegen
