@@ -33,7 +33,8 @@ struct SliceSettings {
     var bedHeight: Double { printer.bedHeight }
 
     func toBridge() -> BBSliceSettings {
-        let s = BBSliceSettings.defaultSettings()
+        // ObjC 的 +defaultSettings 被 Swift 导入器按「省略类型名」规则改名成了 default()
+        let s = BBSliceSettings.default()
         s.layerHeight = layerHeight
         s.firstLayerHeight = firstLayerHeight
         s.nozzleDiameter = nozzleDiameter

@@ -183,7 +183,8 @@ enum SceneBuilder {
     private static func addCamera(to parent: SCNNode, center: SIMD3<Float>, radius: Float) {
         let camera = SCNCamera()
         camera.zNear = 1
-        camera.zFar = radius * 40
+        // SCNCamera 的 zNear/zFar 是 Double，而我们的半径是 Float，必须显式转换
+        camera.zFar = Double(radius) * 40
         camera.fieldOfView = 42
 
         let node = SCNNode()

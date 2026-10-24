@@ -38,12 +38,17 @@ final class BambuCoreEngine {
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
 
-                var error: NSError?
-                guard let bridged = slicer.loadModel(atPath: url.path, error: &error) else {
-                    cont.resume(throwing: SlicerError.load(error?.localizedDescription ?? "模型读取失败"))
-                    return
+                // 注意：ObjC 里最后一个 NSError** 参数会被 Swift 自动桥接成 throws，
+                // 调用时不能再写 error: &error，否则报 "extra argument 'error' in call"。
+                do {
+                    guard let bridged = try slicer.loadModel(atPath: url.path) else {
+                        cont.resume(throwing: SlicerError.load("模型读取失败"))
+                        return
+                    }
+                    cont.resume(returning: Mesh(bridge: bridged))
+                } catch {
+                    cont.resume(throwing: SlicerError.load(error.localizedDescription))
                 }
-                cont.resume(returning: Mesh(bridge: bridged))
             }
         }
     }
@@ -58,28 +63,29 @@ final class BambuCoreEngine {
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
 
-                var error: NSError?
-                guard let result = slicer.sliceModel(atPath: url.path,
-                                                     settings: bridgeSettings,
-                                                     progress: { fraction, stage in
-                                                         progress(fraction, stage)
-                                                     },
-                                                     error: &error) else {
-                    if let e = error, e.code == BBSlicerErrorCode.cancelled.rawValue {
+                do {
+                    let result = try slicer.sliceModel(atPath: url.path,
+                                                       settings: bridgeSettings,
+                                                       progress: { fraction, stage in
+                                                           progress(fraction, stage)
+                                                       })
+
+                    cont.resume(returning: SliceOutput(gcode: result.gcode,
+                                                       durationSeconds: result.estimatedDurationSeconds,
+                                                       filamentGrams: result.filamentGrams,
+                                                       filamentMillimeters: result.filamentMillimeters,
+                                                       layerCount: Int(result.layerCount),
+                                                       backend: result.backend,
+                                                       warnings: result.warnings))
+                } catch {
+                    let ns = error as NSError
+                    if ns.domain == BBSlicerErrorDomain,
+                       ns.code == BBSlicerErrorCode.cancelled.rawValue {
                         cont.resume(throwing: SlicerError.cancelled)
                     } else {
-                        cont.resume(throwing: SlicerError.slice(error?.localizedDescription ?? "切片失败"))
+                        cont.resume(throwing: SlicerError.slice(error.localizedDescription))
                     }
-                    return
                 }
-
-                cont.resume(returning: SliceOutput(gcode: result.gcode,
-                                                   durationSeconds: result.estimatedDurationSeconds,
-                                                   filamentGrams: result.filamentGrams,
-                                                   filamentMillimeters: result.filamentMillimeters,
-                                                   layerCount: Int(result.layerCount),
-                                                   backend: result.backend,
-                                                   warnings: result.warnings))
             }
         }
     }
