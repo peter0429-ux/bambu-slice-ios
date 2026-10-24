@@ -92,8 +92,11 @@ jobs:
               [ -f "$f" ] || continue
               echo
               echo "## $f"
-              grep -nE "error:|fatal error|CMake Error|note: |undefined|redefinition" "$f" \
-                | awk '!seen[$0]++' | head -120 || true
+              # 只抓 error 本体 + 后两行上下文；note: 会把真正的错误挤掉
+              grep -nE "error:|fatal error|CMake Error" "$f" \
+                | awk '!seen[$0]++' | head -50 || true
+              echo "--- 带上下文 ---"
+              grep -A2 -E "error:|fatal error" "$f" | head -60 || true
             done
           } > ci-log/core-failure.txt
           git config user.name "ci-bot"

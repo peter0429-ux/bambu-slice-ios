@@ -43,6 +43,7 @@ configure_file("${CMAKE_CURRENT_LIST_DIR}/libslic3r_version.h.in"
 # 从源文件里剔除。静态库归档不解析符号，只要没人调用就不会有链接问题。
 set(_excluded
     TexturePainting.cpp     # OpenCV
+    FuzzySkin.cpp           # libnoise（用 fuzzyskin_stub.cpp 顶替，模糊皮肤是可选效果）
     TextShape.cpp           # OCCT STEPCAFControl_Reader（文字浮雕，非必需）
     Arrange.cpp             # libnest2d 的 NLopt 优化器（多物件自动排布，单物件切片用不到）
 )
@@ -150,6 +151,7 @@ target_include_directories(clipper_z_obj PRIVATE
 
 add_library(slic3r STATIC ${_srcs} ${_admesh} ${_miniz} ${_minilzo} ${_qhull} ${_nest2d} ${_clipper} ${_qhullcpp} ${_semver} ${_tess} ${_format}
     "${CMAKE_CURRENT_LIST_DIR}/shim/format_stub.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/shim/fuzzyskin_stub.cpp"
     $<TARGET_OBJECTS:clipper_z_obj>)
 
 target_include_directories(slic3r PUBLIC
