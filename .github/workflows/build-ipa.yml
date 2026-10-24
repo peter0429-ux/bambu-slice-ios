@@ -27,7 +27,18 @@ jobs:
         run: brew install xcodegen
 
       - name: Generate Xcode project
-        run: xcodegen generate
+        run: |
+          set -o pipefail
+          xcodegen --version
+          if xcodegen generate 2>&1 | tee xcodegen.log; then
+            echo "工程生成成功"
+          else
+            # 把每行错误变成 ::error:: 注解。注解是公开可读的（check-runs API），
+            # 这样即使没有 token 也能定位 spec 里哪个字段被拒。
+            echo "::error::xcodegen 拒绝了 project.yml，错误摘录："
+            grep -v '^[[:space:]]*$' xcodegen.log | head -25 | sed 's/^/::error::/'
+            exit 1
+          fi
 
       # 关键：CODE_SIGNING_ALLOWED=NO
       # 我们没有你的证书，跳过签名，产出裸的 .app。
