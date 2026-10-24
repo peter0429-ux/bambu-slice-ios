@@ -166,8 +166,9 @@ target_compile_features(slic3r PUBLIC cxx_std_17)
 # 直接 -include 等价于 FORCEINCLUDE 的语义，只是没有预编译加速。
 # glu-libtess 的 .c 文件在 iOS SDK 下缺 <limits.h>（LONG_MAX 未声明），
 # 强制前置包含我们的兼容头。
+set(_tess_shim "${CMAKE_CURRENT_LIST_DIR}/shim/tess_compat.h")
 target_compile_options(slic3r PRIVATE
-    "$<$<COMPILE_LANGUAGE:C>:-include ${CMAKE_CURRENT_LIST_DIR}/shim/tess_compat.h>")
+    "$<$<COMPILE_LANGUAGE:C>:-include${_tess_shim}>")
 
 # 关键：必须限定 COMPILE_LANGUAGE:CXX。
 # pchheader.hpp 里是 <cassert> 这类 C++ 头，套到 qhull/miniz 的 .c 文件上

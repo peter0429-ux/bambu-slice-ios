@@ -85,6 +85,9 @@ public:
     Mat() = default;
     Mat(int rows_, int cols_, int type_) : rows(rows_), cols(cols_), type_(type_) {}
     Mat(int rows_, int cols_, int type_, const struct Scalar &);
+    // ObjColorUtils: cv::Mat(sz, 1, CV_8UC3, data_ptr)
+    Mat(const Size &sz, int, int type__, void *) : rows(sz.height), cols(sz.width), type_(type__) {}
+    Mat(const Size &sz, int, int type__, const void *) : rows(sz.height), cols(sz.width), type_(type__) {}
 
     int rows = 0;
     int cols = 0;
