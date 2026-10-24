@@ -16,6 +16,10 @@
 #include <vector>
 #include <cstddef>
 
+// 全局 typedef：libslic3r 里 uchar / uint64 都不加命名空间直接用
+using uchar  = unsigned char;
+using uint64 = unsigned long long;
+
 namespace cv {
 
 // 必须是宏，不是枚举：调用方写的是不带 cv:: 的 CV_32FC3，
@@ -52,9 +56,7 @@ enum KmeansFlags {
     KMEANS_PP_CENTERS         = 2
 };
 
-// OpenCV 的全局 typedef，libslic3r 里会不加命名空间直接用
-typedef unsigned char      uchar;
-typedef unsigned long long uint64;
+
 
 class Mat {
 public:
@@ -154,6 +156,17 @@ struct Vec {
 using Vec3b = Vec<unsigned char, 3>;
 using Vec4b = Vec<unsigned char, 4>;
 using Vec3f = Vec<float, 3>;
+
+// 多色涂色用的随机数发生器与 kmeans。桩实现，不做真实运算。
+struct RNG {
+    unsigned operator()(unsigned) { return 0; }
+    int    uniform(int a, int) { return a; }
+    double uniform(double a, double) { return a; }
+};
+static inline RNG &theRNG() { static RNG rng; return rng; }
+
+static inline double kmeans(const Mat &, int, Mat &, TermCriteria, int, int, Mat &) { return 0.0; }
+static inline double kmeans(const Mat &, int, Mat &, TermCriteria, int, int, Mat &, int) { return 0.0; }
 
 static inline Mat imread(const std::string &, int = IMREAD_COLOR) { return Mat(); }
 static inline bool imwrite(const std::string &, const Mat &, const std::vector<int> & = {}) { return false; }
