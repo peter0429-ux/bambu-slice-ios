@@ -18,6 +18,27 @@
 
 namespace cv {
 
+// 必须是宏，不是枚举：调用方写的是不带 cv:: 的 CV_32FC3，
+// 用 enum 的话会出现 "use of undeclared identifier 'CV_32FC3'"。
+// 而且宏没定义会导致后面 cv::Mat(...) 构造失败，连带出一串
+// "no viable overloaded '='" 的假错误。
+#define CV_8UC1   0
+#define CV_8UC2   8
+#define CV_8UC3   16
+#define CV_8UC4   24
+#define CV_16UC1  2
+#define CV_32FC1  5
+#define CV_32FC2  13
+#define CV_32FC3  21
+#define CV_32FC4  29
+
+// kmeans 的初始化方式（OpenCV 里是匿名枚举）
+#define KMEANS_RANDOM_CENTERS     0
+#define KMEANS_USE_INITIAL_LABELS 1
+#define KMEANS_PP_CENTERS         2
+
+namespace cv {
+
 enum ImreadModes {
     IMREAD_UNCHANGED = -1,
     IMREAD_GRAYSCALE = 0,
@@ -29,20 +50,11 @@ enum ImwriteFlags {
     IMWRITE_PNG_COMPRESSION = 16
 };
 
-// 常见像素格式常量（OpenCV 的编码规则：深度 | 通道数<<3）
-enum MatTypes {
-    CV_8UC1  = 0,
-    CV_8UC3  = 16,
-    CV_8UC4  = 24,
-    CV_32FC1 = 5,
-    CV_32FC3 = 21,
-    CV_32FC4 = 29
-};
-
 class Mat {
 public:
     Mat() = default;
     Mat(int rows_, int cols_, int type_) : rows(rows_), cols(cols_), type_(type_) {}
+    Mat(int rows_, int cols_, int type_, const struct Scalar &);
 
     int rows = 0;
     int cols = 0;
@@ -57,6 +69,11 @@ public:
     const unsigned char *ptr() const { return nullptr; }
     Mat clone() const { return *this; }
     Mat &operator=(const Mat &) = default;
+
+    Mat row(int) const { return Mat(); }
+    Mat col(int) const { return Mat(); }
+    Mat rowRange(int, int) const { return Mat(); }
+    Mat colRange(int, int) const { return Mat(); }
 
     // ObjColorUtils 会用 at<Vec3f>(y, x) 取像素。桩实现返回静态哑元，
     // 只要不真的读图就不会有问题——这些代码路径我们本来就不执行。
@@ -98,6 +115,10 @@ struct Scalar {
     Scalar() = default;
     Scalar(double a, double b = 0, double c = 0, double d = 0) { v[0]=a; v[1]=b; v[2]=c; v[3]=d; }
 };
+
+// Mat 的四参构造要看到 Scalar 的完整定义，所以放在这里定义
+inline Mat::Mat(int rows_, int cols_, int type_, const Scalar &)
+    : rows(rows_), cols(cols_), type_(type_) {}
 
 // ObjColorUtils 用到 TermCriteria（迭代终止条件）
 class TermCriteria {
