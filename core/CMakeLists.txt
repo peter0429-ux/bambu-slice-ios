@@ -79,6 +79,9 @@ endif()
 add_library(slic3r STATIC ${_srcs} ${_admesh} ${_miniz} ${_minilzo} ${_qhull} ${_nest2d})
 
 target_include_directories(slic3r PUBLIC
+    # shim 必须排在最前面：用 CommonCrypto 顶掉 openssl/md5.h、openssl/sha.h，
+    # 免得为了两个哈希函数去编一整库 OpenSSL
+    "${CMAKE_CURRENT_LIST_DIR}/shim"
     "${BAMBU_SRC}/src"
     "${BAMBU_SRC}/src/libslic3r"
     "${BAMBU_SRC}/src/eigen"
@@ -108,4 +111,9 @@ target_compile_definitions(slic3r PUBLIC
 target_compile_features(slic3r PUBLIC cxx_std_17)
 
 # libslic3r 大量用异常和 dynamic_cast，这两个必须开
-target_compile_options(slic3r PRIVATE -fexceptions -frtti)
+target_compile_options(slic3r PRIVATE
+    -fexceptions
+    -frtti
+    # CommonCrypto 的 CC_MD5_* 在 iOS 13+ 标了 deprecated，只是警告，屏蔽掉
+    -Wno-deprecated-declarations
+)
