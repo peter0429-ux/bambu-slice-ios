@@ -1,0 +1,99 @@
+name: Build libslic3r (iOS core)
+
+# M2：把 libslic3r 编成 iOS 静态库。
+# 先跑探针（5 个文件，约 1 分钟）验证 include 和宏，探针过了再改全量。
+
+on:
+  workflow_dispatch:
+    inputs:
+      probe:
+        description: "只编探针文件（快）"
+        type: boolean
+        default: true
+  push:
+    paths:
+      - "core/**"
+      - ".github/workflows/core.yml"
+
+jobs:
+  # 复用依赖构建（eigen/boost/tbb/cgal/zlib/expat，6 个 job 并行）
+  deps:
+    uses: ./.github/workflows/deps.yml
+
+  core:
+    needs: deps
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 取依赖产物
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dep-*
+          path: Frameworks
+
+      - name: 还原目录名
+        run: |
+          cd Frameworks
+          for d in dep-*; do
+            [ -d "$d" ] || continue
+            target="${d#dep-}"
+            rm -rf "$target"
+            mv "$d" "$target"
+          done
+          ls -1
+
+      - name: 架构断言（不能靠肉眼看日志）
+        run: |
+          bad=""
+          for f in $(find Frameworks -name "*.a"); do
+            if ! lipo -info "$f" | grep -q arm64; then
+              bad="$bad $f"
+            fi
+          done
+          if [ -n "$bad" ]; then
+            echo "::error::以下库不是 arm64:$bad"
+            exit 1
+          fi
+          echo "全部静态库均为 arm64 ✓"
+          find Frameworks -name "*.a" | head -12
+
+      - name: 取 BambuStudio 源码
+        run: |
+          curl -L --retry 3 -o bs.tar.gz \
+            "https://codeload.github.com/bambulab/BambuStudio/tar.gz/refs/heads/master"
+          mkdir -p vendor
+          tar -xzf bs.tar.gz -C vendor --strip-components=1
+          echo "源码文件数: $(find vendor/src -type f | wc -l)"
+
+      - name: Configure
+        run: |
+          set -o pipefail
+          cmake -S core -B build-core \
+            -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/scripts/ios.toolchain.cmake" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBAMBU_SRC="${{ github.workspace }}/vendor" \
+            -DCORE_PROBE=${{ github.event.inputs.probe == 'false' && 'OFF' || 'ON' }} \
+            2>&1 | tee cfg.log
+
+      - name: Build
+        run: |
+          set -o pipefail
+          cmake --build build-core -j"$(sysctl -n hw.ncpu)" 2>&1 | tee build.log
+
+      - name: 错误注解
+        if: failure()
+        run: |
+          for f in cfg.log build.log; do
+            [ -f "$f" ] || continue
+            echo "::error::── $f ──"
+            grep -nE "error:|CMake Error|fatal error" "$f" \
+              | awk '!seen[$0]++' | head -8 | sed 's/^/::error::/' || true
+          done
+
+      - name: 报告产物
+        if: success()
+        run: |
+          find build-core -name "*.a" -exec ls -lh {} \;
+          lipo -info build-core/libslic3r.a 2>/dev/null || lipo -info build-core/libslic3r.a || true

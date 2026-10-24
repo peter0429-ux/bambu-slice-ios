@@ -8,6 +8,8 @@ name: Build iOS deps
 
 on:
   workflow_dispatch:
+  # 允许被 core.yml 当作可复用工作流调用，产物在同一次 run 里共享
+  workflow_call:
   push:
     paths:
       - "scripts/build_deps_ios.sh"

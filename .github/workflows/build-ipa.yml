@@ -5,10 +5,16 @@ name: Build unsigned IPA
 # 详细步骤见 docs/BUILD_IPA.md
 
 on:
+  workflow_dispatch:
   push:
     branches: [ main, master ]
+    # 只在 App 代码变动时构建 ipa，避免改 CI / 文档也触发一轮
+    paths:
+      - "BambuSlice/**"
+      - "BambuCore/**"
+      - "project.yml"
+      - ".github/workflows/build-ipa.yml"
   pull_request:
-  workflow_dispatch:
 
 jobs:
   build:
