@@ -12,8 +12,12 @@ on:
     paths:
       - "BambuSlice/**"
       - "BambuCore/**"
+      # 内核的 CMake/源码改动也要触发，否则改了 core 却不出包
+      - "core/**"
+      - "scripts/**"
       - "project.yml"
       - ".github/workflows/build-ipa.yml"
+      - ".github/workflows/deps.yml"
   pull_request:
 
 jobs:
