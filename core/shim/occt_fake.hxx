@@ -51,7 +51,15 @@ public:
     virtual Standard_Boolean UserBreak() { return Standard_False; }
     virtual void Show(const Message_ProgressScope &, const Standard_Boolean) {}
     void SetRange(const Standard_Real, const Standard_Real) {}
+    void SetScale(const Standard_Real, const Standard_Real) {}
     void Next() {}
+    void Start() {}
+    void Stop() {}
+    // STEP.hpp 的 Show() 里直接调了 GetPosition() 打进度百分比
+    Standard_Real GetPosition() const { return 0.0; }
+    Standard_Real GetValue() const { return 0.0; }
+    Standard_Real GetScale() const { return 100.0; }
+    Standard_Boolean HasOccurred() const { return Standard_False; }
 };
 
 class TDocStd_Document {
