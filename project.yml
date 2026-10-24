@@ -100,6 +100,8 @@ targets:
         HEADER_SEARCH_PATHS:
           - $(inherited)
           - $(SRCROOT)/BambuCore/include
+          # openssl/occt 等第三方桩（跟 libslic3r 编译时同一套 shim）
+          - $(SRCROOT)/core/shim
           - $(SRCROOT)/BambuCore/third_party/vendor-src
           - $(SRCROOT)/BambuCore/third_party/vendor-src/libslic3r
           - $(SRCROOT)/BambuCore/third_party/vendor-src/admesh
