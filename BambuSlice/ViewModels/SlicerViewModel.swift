@@ -1,6 +1,26 @@
 import SwiftUI
 import SceneKit
 
+/// 沙盒里的一个模型文件，给「模型库」列表用。
+struct ModelFile: Identifiable, Hashable {
+    let url: URL
+    let size: Int64
+    let modified: Date
+
+    var id: String { url.path }
+    var name: String { url.lastPathComponent }
+
+    var sizeText: String {
+        ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
+    }
+
+    var dateText: String {
+        let f = DateFormatter()
+        f.dateFormat = "MM-dd HH:mm"
+        return f.string(from: modified)
+    }
+}
+
 @MainActor
 final class SlicerViewModel: ObservableObject {
 
@@ -29,6 +49,8 @@ final class SlicerViewModel: ObservableObject {
     @Published private(set) var progress: Double = 0
     @Published private(set) var stage: String = ""
     @Published private(set) var fileName: String = ""
+    /// 沙盒里能看到的模型文件，「模型库」列表的数据源
+    @Published private(set) var localModels: [ModelFile] = []
 
     // 输入
     @Published var mode: Mode = .model
@@ -119,6 +141,7 @@ final class SlicerViewModel: ObservableObject {
             layerPosition = 1.0
             mode = .model
             phase = .ready
+            refreshLocalModels()
             rebuildScene()
         } catch {
             phase = .empty
@@ -186,32 +209,52 @@ final class SlicerViewModel: ObservableObject {
 
     // MARK: - 私有
 
-    /// 扫 App 自己的 Documents 目录，找最新的一个模型文件。
-    /// 「文件」App 里把 STL 拖进 BambuSlice 文件夹，就是落在这里。
-    static func newestModelInDocuments() -> URL? {
+    /// 扫 App 自己的 Documents 目录，列出所有模型文件（新的在前）。
+    /// 「文件」App 里把 STL 拖进 BambuSlice 文件夹，就落在这里。
+    nonisolated static func scanModels() -> [ModelFile] {
         let fm = FileManager.default
         let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
         guard let walker = fm.enumerator(at: docs,
-                                         includingPropertiesForKeys: [.contentModificationDateKey],
-                                         options: [.skipsHiddenFiles]) else { return nil }
+                                         includingPropertiesForKeys: [.fileSizeKey,
+                                                                      .contentModificationDateKey],
+                                         options: [.skipsHiddenFiles]) else { return [] }
 
-        var best: (URL, Date)?
+        var files: [ModelFile] = []
         for case let url as URL in walker {
             let ext = url.pathExtension.lowercased()
             guard ext == "stl" || ext == "obj" else { continue }
-            let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey])
-                .contentModificationDate) ?? .distantPast
-            if best == nil || date > best!.1 { best = (url, date) }
+            let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+            files.append(ModelFile(url: url,
+                                   size: Int64(values?.fileSize ?? 0),
+                                   modified: values?.contentModificationDate ?? .distantPast))
         }
-        return best?.0
+        return files.sorted { $0.modified > $1.modified }
+    }
+
+    func refreshLocalModels() {
+        localModels = Self.scanModels()
+    }
+
+    func deleteModel(_ file: ModelFile) {
+        try? FileManager.default.removeItem(at: file.url)
+        if modelURL?.path == file.url.path {
+            mesh = nil
+            layers = []
+            output = nil
+            gcodeURL = nil
+            mode = .model
+            phase = .empty
+            rebuildScene()
+        }
+        refreshLocalModels()
     }
 
     /// 启动或回到前台时，如果还没有模型，自动加载文件夹里最新的那个。
-    /// 这样「用文件 App 把 STL 拖进来」才真的能用。
     func autoLoadFromDocuments() async {
         guard mesh == nil, !isBusy else { return }
-        guard let url = Self.newestModelInDocuments() else { return }
-        await importModel(from: url)
+        refreshLocalModels()
+        guard let first = localModels.first else { return }
+        await importModel(from: first.url)
     }
 
     private func rebuildScene() {

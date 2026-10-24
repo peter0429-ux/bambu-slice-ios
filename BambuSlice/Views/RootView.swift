@@ -1,11 +1,10 @@
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct RootView: View {
     @StateObject private var vm = SlicerViewModel()
     @Environment(\.scenePhase) private var scenePhase
 
-    @State private var showImporter = false
+    @State private var showLibrary = false
     @State private var showSettings = false
 
     var body: some View {
@@ -42,16 +41,8 @@ struct RootView: View {
             // 从「文件」App 里「共享 / 用其他应用打开」进来
             Task { await vm.importModel(from: url) }
         }
-        .fileImporter(isPresented: $showImporter,
-                      allowedContentTypes: importTypes,
-                      allowsMultipleSelection: false) { result in
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else { return }
-                Task { await vm.importModel(from: url) }
-            case .failure(let error):
-                vm.errorMessage = error.localizedDescription
-            }
+        .sheet(isPresented: $showLibrary) {
+            ModelLibraryView(vm: vm)
         }
         .sheet(isPresented: $showSettings) {
             SettingsSheet(settings: $vm.settings)
@@ -106,7 +97,7 @@ struct RootView: View {
                 .foregroundStyle(.white.opacity(0.55))
             Text("导入一个 STL 或 OBJ")
                 .font(.headline)
-            Text("支持二进制/ASCII STL、OBJ。也可以从「文件」App\n把模型拖进 BambuSlice 的文件夹。")
+            Text("支持二进制/ASCII STL、OBJ。\n点下面「导入」打开模型库，或把 STL 复制进 BambuSlice 文件夹。")
                 .font(.footnote)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.white.opacity(0.55))
@@ -177,7 +168,7 @@ struct RootView: View {
 
             HStack(spacing: 10) {
                 Button {
-                    showImporter = true
+                    showLibrary = true
                 } label: {
                     Label("导入", systemImage: "tray.and.arrow.down")
                         .frame(maxWidth: .infinity)
@@ -252,13 +243,6 @@ struct RootView: View {
         .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
-    private var importTypes: [UTType] {
-        // 用 .item 全放开，是最稳的做法。
-        // 之前只给 stl/obj 的具体 UTI，碰上文件提供方报的动态 UTI 对不上，
-        // 文件在选择器里会变灰、点了没反应——用户看到的就是「导入了没反应」。
-        // 真正的格式校验放在内核里做，不支持时会给明确提示。
-        [.item]
-    }
 }
 
 struct PanelButtonStyle: ButtonStyle {

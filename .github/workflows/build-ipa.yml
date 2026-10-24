@@ -115,6 +115,22 @@ jobs:
           path: BambuSlice-unsigned.ipa
           retention-days: 30
 
+      # 把 ipa 推到一个孤儿分支，这样没有 token 也能用 git fetch 拿到产物。
+      # artifacts 接口需要鉴权，但 git 协议不需要。
+      - name: Publish IPA to builds branch
+        if: success()
+        run: |
+          git config user.name "ci-bot"
+          git config user.email "ci-bot@users.noreply.github.com"
+          git checkout --orphan builds
+          git rm -rf --cached . >/dev/null 2>&1 || true
+          mkdir -p dist
+          cp BambuSlice-unsigned.ipa dist/BambuSlice-unsigned.ipa
+          git add -f dist/BambuSlice-unsigned.ipa
+          git commit -m "ipa for run #${{ github.run_number }} (${{ github.sha }})"
+          git push -f origin builds
+          echo "已推送到 builds 分支"
+
       - name: Upload build log on failure
         if: failure()
         uses: actions/upload-artifact@v4
