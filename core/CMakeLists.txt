@@ -36,19 +36,15 @@ set(BBL_INTERNAL_TESTING   0)
 configure_file("${CMAKE_CURRENT_LIST_DIR}/libslic3r_version.h.in"
                "${CMAKE_CURRENT_BINARY_DIR}/libslic3r_version.h" @ONLY)
 
-# ── 源文件：从他们 CMakeLists 的 set(lisbslic3r_sources) 抽出来后剪枝 ──
+# ── 源文件：从他们 CMakeLists 的 set(lisbslic3r_sources) 抽出后剪枝 ──
+# sources.txt 是纯净清单（只有文件名，无注释）。这里再按扩展名过滤一次，
+# 双保险：只要出现杂行（空格、#、中文说明），都不会被当成源文件。
 file(STRINGS "${CMAKE_CURRENT_LIST_DIR}/sources.txt" _raw)
 set(_srcs "")
 foreach(f IN LISTS _raw)
-    # 必须写 "${f}"：CMake 的 if(f MATCHES ...) 比较的是字面量 "f"，
-    # 不是变量值。少了引号和 ${} 的话注释行会被当成源文件路径。
-    if("${f}" STREQUAL "")
-        continue()
+    if("${f}" MATCHES "\\.(cpp|mm|c)$")
+        list(APPEND _srcs "${BAMBU_SRC}/src/libslic3r/${f}")
     endif()
-    if("${f}" MATCHES "^#")
-        continue()
-    endif()
-    list(APPEND _srcs "${BAMBU_SRC}/src/libslic3r/${f}")
 endforeach()
 list(LENGTH _srcs _n)
 message(STATUS "libslic3r 源文件: ${_n} 个")
