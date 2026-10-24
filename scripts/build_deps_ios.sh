@@ -173,6 +173,16 @@ build_cgal() {
   echo "提示：若编译时报 GMP/MPFR 缺失，需另编 gmp+mpfr 并放到 Frameworks/gmp。"
 }
 
+# cereal：纯头文件序列化库。libslic3r 的 Geometry.hpp 直接 include 它，
+# 但 BambuStudio 的 src/ 里没有内联，必须外编（其实只是拷头文件）。
+build_cereal() {
+  log "cereal (header-only)"
+  fetch "https://github.com/USCiLab/cereal/archive/refs/tags/v1.3.2.tar.gz" "${WORK}/cereal"
+  mkdir -p "${FW}/cereal/include"
+  rm -rf "${FW}/cereal/include/cereal"
+  cp -R "${WORK}/cereal/include/cereal" "${FW}/cereal/include/"
+}
+
 case "${1:-all}" in
   eigen)  build_eigen ;;
   zlib)   build_zlib ;;
@@ -180,6 +190,7 @@ case "${1:-all}" in
   tbb)    build_tbb ;;
   boost)  build_boost ;;
   cgal)   build_cgal ;;
+  cereal) build_cereal ;;
   all)
     build_eigen
     build_zlib
@@ -187,10 +198,11 @@ case "${1:-all}" in
     build_tbb
     build_boost
     build_cgal
+    build_cereal
     log "依赖构建结束。产物：${FW}"
     ;;
   *)
-    echo "用法: $0 [all|eigen|zlib|expat|tbb|boost|cgal]"
+    echo "用法: $0 [all|eigen|zlib|expat|tbb|boost|cgal|cereal]"
     exit 1
     ;;
 esac

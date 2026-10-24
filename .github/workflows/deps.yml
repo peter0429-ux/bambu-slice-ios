@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        dep: [eigen, zlib, expat, tbb, boost, cgal]
+        dep: [eigen, zlib, expat, tbb, boost, cgal, cereal]
 
     steps:
       - uses: actions/checkout@v4

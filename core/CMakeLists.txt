@@ -94,6 +94,7 @@ target_include_directories(slic3r PUBLIC
     "${DEPS}/eigen/include"
     "${DEPS}/zlib/include"
     "${DEPS}/expat/include"
+    "${DEPS}/cereal/include"
 )
 
 target_compile_definitions(slic3r PUBLIC
