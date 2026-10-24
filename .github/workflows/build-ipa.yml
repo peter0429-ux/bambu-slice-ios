@@ -12,7 +12,9 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14
+    # 用 latest 而不是 macos-14：新版 XcodeGen 生成的工程格式较新，
+    # 老镜像自带的 Xcode 会报 "Unable to read project"。
+    runs-on: macos-latest
 
     steps:
       - name: Checkout
@@ -63,28 +65,11 @@ jobs:
       - name: Show compiler errors
         if: failure()
         run: |
-          # 把关键诊断变成 ::error:: 注解。注解通过 check-runs API 公开可读，
-          # 这样不用给 CI 配 token 也能定位问题。
+          # 注解每步上限 10 条，所以只输出最关键的信息，顺序即优先级
           ann() { sed 's/^/::error::/'; }
-
-          if [ -f xcodegen.log ]; then
-            echo "::error::── xcodegen 输出尾部 ──"; tail -8 xcodegen.log | ann
-          fi
-
-          if [ -d BambuSlice.xcodeproj ]; then
-            echo "::error::── 工程目录 ──"; ls -la BambuSlice.xcodeproj | head -6 | ann
-            echo "::error::── pbxproj 语法检查 ──"
-            plutil -lint BambuSlice.xcodeproj/project.pbxproj 2>&1 | ann || true
-            echo "::error::── xcodebuild -list ──"
-            xcodebuild -list -project BambuSlice.xcodeproj 2>&1 | head -12 | ann || true
-          else
-            echo "::error::BambuSlice.xcodeproj 不存在"
-          fi
-
-          if [ -f build.log ]; then
-            echo "::error::── build.log 尾部 ──"; tail -12 build.log | ann
-            echo "::error::共 $(grep -cE '(^|[[:space:]])error:' build.log) 行 error"
-          fi
+          { xcodebuild -version; xcodegen --version; } 2>&1 | head -3 | ann
+          grep -m1 objectVersion BambuSlice.xcodeproj/project.pbxproj 2>/dev/null | ann || true
+          xcodebuild -list -project BambuSlice.xcodeproj 2>&1 | head -6 | ann || true
 
       - name: Package IPA
         run: |
