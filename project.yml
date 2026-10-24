@@ -112,6 +112,7 @@ targets:
           - $(SRCROOT)/BambuCore/third_party/vendor-src/glu-libtess/src
           - $(SRCROOT)/BambuCore/third_party/vendor-src/miniz
           - $(SRCROOT)/BambuCore/third_party/vendor-src/qhull/src
+          - $(SRCROOT)/Frameworks/libslic3r/include
           - $(SRCROOT)/Frameworks/boost/include
           - $(SRCROOT)/Frameworks/tbb/include
           - $(SRCROOT)/Frameworks/eigen/include

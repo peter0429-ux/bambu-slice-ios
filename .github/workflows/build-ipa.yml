@@ -69,8 +69,10 @@ jobs:
 
       - name: Pack bundle
         run: |
-          mkdir -p bundle/Frameworks/libslic3r/lib
+          mkdir -p bundle/Frameworks/libslic3r/lib bundle/Frameworks/libslic3r/include
           cp build-core/libslic3r.a bundle/Frameworks/libslic3r/lib/
+          # libslic3r_version.h 是 CMake 生成的，不在源码树里，单独带走
+          cp build-core/libslic3r_version.h bundle/Frameworks/libslic3r/include/
           tar -czf bundle/frameworks.tgz -C bundle Frameworks
           # 头文件包：排除 libigl/eigen（eigen 用 deps 里的）与实现文件
           tar -czf bundle/vendor-headers.tgz \
