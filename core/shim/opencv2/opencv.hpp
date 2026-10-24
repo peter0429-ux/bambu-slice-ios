@@ -88,6 +88,11 @@ public:
     // ObjColorUtils: cv::Mat(sz, 1, CV_8UC3, data_ptr)
     Mat(const Size &sz, int, int type__, void *) : rows(sz.height), cols(sz.width), type_(type__) {}
     Mat(const Size &sz, int, int type__, const void *) : rows(sz.height), cols(sz.width), type_(type__) {}
+    // uniqueImage.size() 是 size_t，data() 是 T*，上面重载吃不到，专门补泛型版
+    template <typename T>
+    Mat(size_t rows_, int, int type__, T *) : rows(static_cast<int>(rows_)), cols(1), type_(type__) {}
+    template <typename T>
+    Mat(size_t rows_, int, int type__, const T *) : rows(static_cast<int>(rows_)), cols(1), type_(type__) {}
 
     int rows = 0;
     int cols = 0;
