@@ -28,6 +28,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ccache：改了 clipper_z 之类的文件时，只有它重编，其余 .o 秒取
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-core-${{ github.sha }}
+          restore-keys: ccache-core-
+
+      - name: Install ccache
+        run: brew install ccache
+
       - name: Cache deps
         id: depcache
         uses: actions/cache@v4
@@ -54,8 +65,12 @@ jobs:
           cmake -S core -B build-core \
             -DCMAKE_TOOLCHAIN_FILE="$PWD/scripts/ios.toolchain.cmake" \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DBAMBU_SRC="$PWD/vendor" 2>&1 | tee core-cfg.log
+          export CCACHE_MAXSIZE=2G
           cmake --build build-core -j"$(sysctl -n hw.ncpu)" -- -k 2>&1 | tee core-build.log
+          ccache -s || true
 
       - name: Show core errors
         if: failure()

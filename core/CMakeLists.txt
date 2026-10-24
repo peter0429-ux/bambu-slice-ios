@@ -44,7 +44,6 @@ configure_file("${CMAKE_CURRENT_LIST_DIR}/libslic3r_version.h.in"
 set(_excluded
     TexturePainting.cpp     # OpenCV
     FuzzySkin.cpp           # libnoise
-    EdgeGrid.cpp            # libpng
     PNGReadWrite.cpp        # libpng（贴图读写）
     TextShape.cpp           # OCCT STEPCAFControl_Reader（文字浮雕，非必需）
     Arrange.cpp             # libnest2d 的 NLopt 优化器（多物件自动排布，单物件切片用不到）
@@ -108,7 +107,9 @@ file(GLOB _nest2d  "${BAMBU_SRC}/src/libnest2d/*.cpp")
 file(GLOB _clipper "${BAMBU_SRC}/src/clipper2/Clipper2Lib/src/*.cpp")
 # libslic3r 里 Brim.cpp 等还引用老版 clipper（ClipperLib_Z），以及新版 qhull 的
 # C++ 接口（orgQhull::Qhull）和 semver C 库。这些不编进去，链接时缺符号。
-file(GLOB _qhullcpp   "${BAMBU_SRC}/src/qhull/src/qhull/*.cpp")
+file(GLOB _qhullcpp   "${BAMBU_SRC}/src/qhull/src/libqhullcpp/*.cpp")
+# qt-qhull.cpp 需要 Qt，去掉
+list(REMOVE_ITEM _qhullcpp "${BAMBU_SRC}/src/qhull/src/libqhullcpp/qt-qhull.cpp")
 file(GLOB _semver     "${BAMBU_SRC}/src/semver/semver.c")
 file(GLOB _tess    "${BAMBU_SRC}/src/glu-libtess/*.c"
                    "${BAMBU_SRC}/src/glu-libtess/src/*.c")

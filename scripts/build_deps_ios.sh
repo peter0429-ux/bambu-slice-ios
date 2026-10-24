@@ -126,11 +126,11 @@ build_tbb() {
 # 只编 libslic3r 真正用到的几个库，全编要跑一小时。
 # ─────────────────────────────────────────────────────────────
 build_boost() {
-  log "Boost ${BOOST_VERSION} (filesystem/thread/system/regex/iostreams)"
+  log "Boost ${BOOST_VERSION} (filesystem/thread/system/regex/iostreams/log/date_time/chrono/atomic)"
   fetch "https://archives.boost.io/release/${BOOST_VERSION}/source/boost_${BOOST_VERSION//./_}.tar.gz" "${WORK}/boost"
 
   pushd "${WORK}/boost" >/dev/null
-  ./bootstrap.sh --with-libraries=filesystem,thread,system,regex,iostreams --prefix="${FW}/boost" >/dev/null
+  ./bootstrap.sh --with-libraries=filesystem,thread,system,regex,iostreams,log,date_time,chrono,atomic --prefix="${FW}/boost" >/dev/null
 
   # 单独写一份 user-config，避免在命令行里塞带引号的多行参数
   cat > "${WORK}/ios-user-config.jam" <<EOF

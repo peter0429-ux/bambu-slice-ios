@@ -66,6 +66,7 @@ targets:
           - -lslic3r
           - -L$(SRCROOT)/Frameworks/boost/lib
           - -lboost_filesystem -lboost_thread -lboost_system -lboost_regex
+          - -lboost_log -lboost_date_time -lboost_chrono -lboost_atomic
           - -L$(SRCROOT)/Frameworks/tbb/lib
           - -ltbb -ltbbmalloc
           - -L$(SRCROOT)/Frameworks/zlib/lib
