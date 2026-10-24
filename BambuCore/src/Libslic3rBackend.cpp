@@ -50,7 +50,8 @@ std::atomic<bool> g_cancel{false};
 void set_str(Slic3r::DynamicPrintConfig &cfg, const char *key, const std::string &value) {
     // set_deserialize 走的是配置项自己的反序列化，不用为每个类型记住
     // ConfigOptionFloat / Bool / Int / Enum 的构造方式。
-    cfg.set_deserialize(key, value);
+    Slic3r::ConfigSubstitutionContext ctxt{ Slic3r::ForwardCompatibilitySubstitutionRule::Disable };
+    cfg.set_deserialize(key, value, ctxt);
 }
 
 void set_double(Slic3r::DynamicPrintConfig &cfg, const char *key, double v) {
@@ -128,20 +129,13 @@ Slic3r::DynamicPrintConfig make_config(const Settings &s, std::vector<std::strin
 }
 
 // ── 进度回调 ─────────────────────────────────────────────────
-struct StatusCtx {
-    const ProgressFn *fn = nullptr;
-};
-
-void on_status(const Slic3r::PrintBase::SlicingStatus &status, void *data) {
-    auto *ctx = static_cast<StatusCtx *>(data);
-    if (!ctx || !ctx->fn || !*ctx->fn) return;
-    // [CP-3] 取消：不同版本挂法不同。PrusaSlicer 里 status.flags 有 CANCEL 位，
-    //        Bambu 分支要走 Print 上的 cancel 接口。这里只做标记 + 上报。
+void on_status(const Slic3r::PrintBase::SlicingStatus &status, const ProgressFn &progress) {
+    if (!progress) return;
     if (g_cancel.load()) {
-        (*ctx->fn)(static_cast<float>(status.percent) / 100.0f, "正在取消…");
+        progress(static_cast<float>(status.percent) / 100.0f, "正在取消…");
         return;
     }
-    (*ctx->fn)(static_cast<float>(status.percent) / 100.0f, status.text);
+    progress(static_cast<float>(status.percent) / 100.0f, status.text);
 }
 
 // 把模型摆到热床中心并落到 z=0
@@ -206,17 +200,18 @@ bool slice(const std::string &path,
 
         report(0.15f, "构建打印任务");
         Slic3r::Print print;
-        StatusCtx ctx{&progress};
-        print.set_status_callback(&on_status, &ctx);
+        print.set_status_callback([&](const Slic3r::PrintBase::SlicingStatus &st) {
+            on_status(st, progress);
+        });
 
         print.apply(model, cfg);
 
         report(0.20f, "校验");
         // [CP-6] PrusaSlicer / Bambu 的 Print::validate() 返回 std::string
         //        （空串=通过，非空=错误描述）。少数 fork 返回 bool，按你的 tag 改这一行。
-        const std::string valid_err = print.validate();
-        if (!valid_err.empty()) {
-            error = "切片参数校验失败: " + valid_err;
+        const Slic3r::StringObjectException valid_err = print.validate();
+        if (!valid_err.string.empty()) {
+            error = "切片参数校验失败: " + valid_err.string;
             return false;
         }
 
