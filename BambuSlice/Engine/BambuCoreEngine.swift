@@ -39,12 +39,10 @@ final class BambuCoreEngine {
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
 
                 // 注意：ObjC 里最后一个 NSError** 参数会被 Swift 自动桥接成 throws，
-                // 调用时不能再写 error: &error，否则报 "extra argument 'error' in call"。
+                // 调用时不能再写 error: &error，而且返回值也会变成非 Optional
+                // （失败通过 throw 表达），所以这里不能用 guard let。
                 do {
-                    guard let bridged = try slicer.loadModel(atPath: url.path) else {
-                        cont.resume(throwing: SlicerError.load("模型读取失败"))
-                        return
-                    }
+                    let bridged = try slicer.loadModel(atPath: url.path)
                     cont.resume(returning: Mesh(bridge: bridged))
                 } catch {
                     cont.resume(throwing: SlicerError.load(error.localizedDescription))
