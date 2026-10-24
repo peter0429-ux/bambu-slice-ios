@@ -3,6 +3,11 @@ name: Build libslic3r (iOS core)
 # M2：把 libslic3r 编成 iOS 静态库。
 # 先跑探针（5 个文件，约 1 分钟）验证 include 和宏，探针过了再改全量。
 
+# 连续推送时只保留最新一轮，避免几轮并发抢 runner、互相拖慢
+concurrency:
+  group: core-build-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   workflow_dispatch:
     inputs:
