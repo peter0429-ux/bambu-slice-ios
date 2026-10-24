@@ -102,7 +102,11 @@ final class SlicerViewModel: ObservableObject {
         errorMessage = nil
 
         do {
-            let local = try Self.stash(url)
+            // iCloud 云盘里的文件可能只是个占位符，拷贝前要协商并催下载，
+            // 这些都是阻塞操作，必须离开主线程做，否则界面会假死。
+            let local = try await Task.detached(priority: .userInitiated) {
+                try Self.stash(url)
+            }.value
             let loaded = try await engine.loadModel(at: local)
 
             modelURL = local
@@ -214,9 +218,10 @@ final class SlicerViewModel: ObservableObject {
         scene = SceneBuilder.buildScene(mesh: mesh, layers: layers, settings: settings)
     }
 
-    /// 文档选择器给的 URL 是安全作用域的，生命周期不可控。
-    /// 立刻拷到沙盒里，后续内核随便读。
-    private static func stash(_ url: URL) throws -> URL {
+    /// 文档选择器给的 URL 是安全作用域的，生命周期不可控，立刻拷进沙盒。
+    /// 注意：iCloud 云盘里的文件必须先协商（NSFileCoordinator）再读，
+    /// 直接 copyItem 会抛权限错误，或者拷到一个还没下载完的空壳。
+    nonisolated private static func stash(_ url: URL) throws -> URL {
         let fm = FileManager.default
         let docs = fm.urls(for: .documentDirectory, in: .userDomainMask)[0].resolvingSymlinksInPath()
         let src = url.resolvingSymlinksInPath()
@@ -226,17 +231,38 @@ final class SlicerViewModel: ObservableObject {
             return src
         }
 
+        // 云盘文件先催一次下载
+        if let values = try? src.resourceValues(forKeys: [.isUbiquitousItemKey]),
+           values.isUbiquitousItem == true {
+            try? fm.startDownloadingUbiquitousItem(at: src)
+        }
+
         let dir = docs.appendingPathComponent("Imports", isDirectory: true)
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
 
-        let dest = dir.appendingPathComponent(url.lastPathComponent)
+        let dest = dir.appendingPathComponent(src.lastPathComponent)
         if fm.fileExists(atPath: dest.path) {
-            try fm.removeItem(at: dest)
+            try? fm.removeItem(at: dest)
         }
 
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        try fm.copyItem(at: url, to: dest)
+
+        var coordError: NSError?
+        var copyError: Error?
+        NSFileCoordinator().coordinate(readingItemAt: src, options: [], error: &coordError) { readURL in
+            do {
+                try fm.copyItem(at: readURL, to: dest)
+            } catch {
+                copyError = error
+            }
+        }
+        if let copyError { throw copyError }
+        if let coordError { throw coordError }
+
+        guard fm.fileExists(atPath: dest.path) else {
+            throw SlicerError.load("文件读取失败：iCloud 可能还没下载完，等几秒再试一次")
+        }
         return dest
     }
 
