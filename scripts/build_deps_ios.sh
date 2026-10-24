@@ -73,11 +73,15 @@ build_zlib() {
   cmake --build "${WORK}/zlib/build-ios" -j"${JOBS}" --target zlibstatic --config Release
 
   mkdir -p "${FW}/zlib/include" "${FW}/zlib/lib"
-  local lib
+  local lib zconf
   lib="$(find "${WORK}/zlib/build-ios" -name 'libz*.a' -type f | head -1)"
   [ -n "${lib}" ] || { echo "没找到 libz.a"; return 1; }
   cp "${lib}" "${FW}/zlib/lib/libz.a"
-  cp "${WORK}/zlib/zlib.h" "${WORK}/zlib/zconf.h" "${FW}/zlib/include/"
+
+  # zconf.h 是 CMake 从 zconf.h.in 生成到 build 目录的，源码树里没有
+  zconf="$(find "${WORK}/zlib" -maxdepth 2 -name 'zconf.h' -type f | head -1)"
+  cp "${WORK}/zlib/zlib.h" "${FW}/zlib/include/"
+  [ -n "${zconf}" ] && cp "${zconf}" "${FW}/zlib/include/"
   log "zlib 完成: ${FW}/zlib"
 }
 
