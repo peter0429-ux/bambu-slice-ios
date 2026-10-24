@@ -37,8 +37,6 @@ namespace cv {
 #define KMEANS_USE_INITIAL_LABELS 1
 #define KMEANS_PP_CENTERS         2
 
-namespace cv {
-
 enum ImreadModes {
     IMREAD_UNCHANGED = -1,
     IMREAD_GRAYSCALE = 0,
