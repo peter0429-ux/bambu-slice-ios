@@ -72,10 +72,17 @@ jobs:
 
       - name: Pack bundle
         run: |
+          # 关键：把 deps 构建出的整个 Frameworks（boost/tbb/eigen/cgal/...）拷进
+          # bundle，再补 libslic3r.a。之前只拷了 libslic3r.a，boost 头全丢了。
+          mkdir -p bundle
+          cp -R Frameworks bundle/Frameworks
           mkdir -p bundle/Frameworks/libslic3r/lib bundle/Frameworks/libslic3r/include
           cp build-core/libslic3r.a bundle/Frameworks/libslic3r/lib/
           # libslic3r_version.h 是 CMake 生成的，不在源码树里，单独带走
           cp build-core/libslic3r_version.h bundle/Frameworks/libslic3r/include/
+          # 打包前自检：boost 头必须已经在包里
+          test -f bundle/Frameworks/boost/include/boost/optional.hpp \
+            || { echo "::error::bundle 缺 boost/optional.hpp"; exit 1; }
           tar -czf bundle/frameworks.tgz -C bundle Frameworks
           # 头文件包：排除 libigl/eigen（eigen 用 deps 里的）与实现文件
           tar -czf bundle/vendor-headers.tgz \
