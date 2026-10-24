@@ -22,6 +22,8 @@ using uint64 = unsigned long long;
 
 namespace cv {
 
+struct Size;
+
 // 必须是宏，不是枚举：调用方写的是不带 cv:: 的 CV_32FC3，
 // 用 enum 的话会出现 "use of undeclared identifier 'CV_32FC3'"。
 // 而且宏没定义会导致后面 cv::Mat(...) 构造失败，连带出一串
@@ -31,6 +33,7 @@ namespace cv {
 #define CV_8UC3   16
 #define CV_8UC4   24
 #define CV_16UC1  2
+#define CV_32S    4
 #define CV_32FC1  5
 #define CV_32FC2  13
 #define CV_32FC3  21
@@ -50,6 +53,19 @@ enum ImwriteFlags {
 
 // kmeans 的初始化方式。必须是命名空间内的枚举，不能是宏——
 // 调用方写 cv::KMEANS_PP_CENTERS，宏会展开成 cv::2 直接语法错。
+// 颜色空间转换代码（桩里不真的转换，只占位）
+enum ColorConversionCodes {
+    COLOR_BGR2RGB  = 4,
+    COLOR_RGB2BGR  = 4,
+    COLOR_BGR2GRAY = 6,
+    COLOR_RGB2HSV  = 40,
+    COLOR_HSV2RGB  = 54,
+    COLOR_RGB2Lab  = 44,
+    COLOR_Lab2RGB  = 56,
+    COLOR_RGBA2RGB = 1,
+    COLOR_RGB2RGBA = 0
+};
+
 enum KmeansFlags {
     KMEANS_RANDOM_CENTERS     = 0,
     KMEANS_USE_INITIAL_LABELS = 1,
@@ -82,6 +98,27 @@ public:
     Mat col(int) const { return Mat(); }
     Mat rowRange(int, int) const { return Mat(); }
     Mat colRange(int, int) const { return Mat(); }
+
+    // ObjColorUtils 还会遍历 Mat 的元素、按行取子矩阵、转换类型
+    unsigned char *data = nullptr;
+    int rows_placeholder = 0;
+
+    unsigned char *begin() { return nullptr; }
+    unsigned char *end() { return nullptr; }
+    const unsigned char *begin() const { return nullptr; }
+    const unsigned char *end() const { return nullptr; }
+
+    Size size() const { return Size(cols, rows); }
+    int dims = 2;
+
+    void clear() { rows = cols = 0; }
+
+    template <typename T>
+    void emplace_back(T) {}
+
+    // convertTo：桩实现直接赋值（不做真实类型转换）
+    void convertTo(Mat &dst, int) const { dst = *this; }
+    void convertTo(Mat &dst, int, double, double) const { dst = *this; }
 
     // ObjColorUtils 会用 at<Vec3f>(y, x) 取像素。桩实现返回静态哑元，
     // 只要不真的读图就不会有问题——这些代码路径我们本来就不执行。
@@ -149,6 +186,16 @@ struct Vec {
     Vec(const Vec<U, N> &o) {
         for (int i = 0; i < N; ++i) val[i] = static_cast<T>(o.val[i]);
     }
+    // 真 OpenCV 的 Vec 支持 Vec(a,b,c) 这类变参构造，桩用递归实现
+    template <typename A, typename B, typename C, typename D>
+    Vec(A a, B b, C c, D d) {
+        val[0] = static_cast<T>(a); val[1] = static_cast<T>(b);
+        val[2] = static_cast<T>(c); val[3] = static_cast<T>(d);
+    }
+    template <typename A, typename B, typename C>
+    Vec(A a, B b, C c) {
+        val[0] = static_cast<T>(a); val[1] = static_cast<T>(b); val[2] = static_cast<T>(c);
+    }
     T &operator[](int i) { return val[i]; }
     const T &operator[](int i) const { return val[i]; }
 };
@@ -159,6 +206,7 @@ using Vec3f = Vec<float, 3>;
 
 // 多色涂色用的随机数发生器与 kmeans。桩实现，不做真实运算。
 struct RNG {
+    unsigned long long state = 123456789;
     unsigned operator()(unsigned) { return 0; }
     int    uniform(int a, int) { return a; }
     double uniform(double a, double) { return a; }
@@ -172,13 +220,6 @@ static inline Mat imread(const std::string &, int = IMREAD_COLOR) { return Mat()
 static inline bool imwrite(const std::string &, const Mat &, const std::vector<int> & = {}) { return false; }
 static inline Mat cvtColor(const Mat &, Mat &dst, int) { dst = Mat(); return dst; }
 static inline void resize(const Mat &, Mat &dst, Size) { dst = Mat(); }
-
-enum ColorConversionCodes {
-    COLOR_BGR2RGB = 4,
-    COLOR_RGB2BGR = 4,
-    COLOR_BGR2GRAY = 6,
-    COLOR_RGBA2RGB = 1
-};
 
 } // namespace cv
 
