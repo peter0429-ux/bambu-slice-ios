@@ -32,10 +32,6 @@ namespace cv {
 #define CV_32FC3  21
 #define CV_32FC4  29
 
-// kmeans 的初始化方式（OpenCV 里是匿名枚举）
-#define KMEANS_RANDOM_CENTERS     0
-#define KMEANS_USE_INITIAL_LABELS 1
-#define KMEANS_PP_CENTERS         2
 
 enum ImreadModes {
     IMREAD_UNCHANGED = -1,
@@ -47,6 +43,18 @@ enum ImreadModes {
 enum ImwriteFlags {
     IMWRITE_PNG_COMPRESSION = 16
 };
+
+// kmeans 的初始化方式。必须是命名空间内的枚举，不能是宏——
+// 调用方写 cv::KMEANS_PP_CENTERS，宏会展开成 cv::2 直接语法错。
+enum KmeansFlags {
+    KMEANS_RANDOM_CENTERS     = 0,
+    KMEANS_USE_INITIAL_LABELS = 1,
+    KMEANS_PP_CENTERS         = 2
+};
+
+// OpenCV 的全局 typedef，libslic3r 里会不加命名空间直接用
+typedef unsigned char      uchar;
+typedef unsigned long long uint64;
 
 class Mat {
 public:
@@ -133,6 +141,12 @@ public:
 template <typename T, int N>
 struct Vec {
     T val[N] = {};
+    Vec() = default;
+    // 允许 Vec3b -> Vec3f 这类跨类型赋值（真 OpenCV 也有）
+    template <typename U>
+    Vec(const Vec<U, N> &o) {
+        for (int i = 0; i < N; ++i) val[i] = static_cast<T>(o.val[i]);
+    }
     T &operator[](int i) { return val[i]; }
     const T &operator[](int i) const { return val[i]; }
 };
