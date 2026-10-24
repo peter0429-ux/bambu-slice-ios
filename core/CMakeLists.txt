@@ -40,11 +40,21 @@ configure_file("${CMAKE_CURRENT_LIST_DIR}/libslic3r_version.h.in"
 file(STRINGS "${CMAKE_CURRENT_LIST_DIR}/sources.txt" _raw)
 set(_srcs "")
 foreach(f IN LISTS _raw)
-    if(f STREQUAL "" OR f MATCHES "^#")
+    # 必须写 "${f}"：CMake 的 if(f MATCHES ...) 比较的是字面量 "f"，
+    # 不是变量值。少了引号和 ${} 的话注释行会被当成源文件路径。
+    if("${f}" STREQUAL "")
+        continue()
+    endif()
+    if("${f}" MATCHES "^#")
         continue()
     endif()
     list(APPEND _srcs "${BAMBU_SRC}/src/libslic3r/${f}")
 endforeach()
+list(LENGTH _srcs _n)
+message(STATUS "libslic3r 源文件: ${_n} 个")
+if(_n EQUAL 0)
+    message(FATAL_ERROR "sources.txt 没解析出任何源文件，检查格式")
+endif()
 
 if(CORE_PROBE)
     # 挑几个有代表性的：boost 用得多、clipper 用得多、基础几何
