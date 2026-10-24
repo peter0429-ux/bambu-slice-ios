@@ -15,6 +15,9 @@ jobs:
     # 用 latest 而不是 macos-14：新版 XcodeGen 生成的工程格式较新，
     # 老镜像自带的 Xcode 会报 "Unable to read project"。
     runs-on: macos-latest
+    # 需要写权限才能把失败日志推到 ci-log 分支
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
@@ -62,18 +65,32 @@ jobs:
             PROVISIONING_PROFILE_SPECIFIER="" \
             build 2>&1 | tee build.log
 
-      - name: Show compiler errors
+      - name: Collect failure log
         if: failure()
         run: |
-          # 注解每步上限 10 条，所以只取去重后的前几条
-          ann() { sed 's/^/::error::/'; }
-          if [ ! -f build.log ]; then
-            echo "::error::build.log 不存在"
-            exit 0
-          fi
-          n=$(grep -cE '(^|[[:space:]])error:' build.log || true)
-          echo "::error::共 ${n} 行 error，以下去重后前 9 条："
-          grep -E '(^|[[:space:]])error:' build.log | awk '!seen[$0]++' | head -9 | ann || true
+          mkdir -p ci-log
+          {
+            echo "# run #${{ github.run_number }}  commit ${{ github.sha }}"
+            echo
+            echo "## 编译错误（去重，最多 80 条）"
+            grep -E '(^|[[:space:]])error:' build.log 2>/dev/null | awk '!seen[$0]++' | head -80 || true
+            echo
+            echo "## build.log 尾部 40 行"
+            tail -40 build.log 2>/dev/null || true
+          } > ci-log/failure.txt
+
+          # 顺便输出注解，方便在网页上直接看
+          grep -E '(^|[[:space:]])error:' build.log 2>/dev/null \
+            | awk '!seen[$0]++' | head -9 | sed 's/^/::error::/' || true
+
+          # 把日志推到 ci-log 分支：git 协议不经过 API 限流，本地 git fetch 就能读。
+          # 该分支不触发本 workflow（只在 main 上触发），不会成环。
+          git config user.name "ci-bot"
+          git config user.email "ci-bot@users.noreply.github.com"
+          git checkout -B ci-log
+          git add -f ci-log/failure.txt
+          git commit -m "ci: failure log for run #${{ github.run_number }}" || exit 0
+          git push -f origin ci-log
 
       - name: Package IPA
         run: |
