@@ -43,8 +43,6 @@ configure_file("${CMAKE_CURRENT_LIST_DIR}/libslic3r_version.h.in"
 # 从源文件里剔除。静态库归档不解析符号，只要没人调用就不会有链接问题。
 set(_excluded
     TexturePainting.cpp     # OpenCV
-    FuzzySkin.cpp           # libnoise
-    PNGReadWrite.cpp        # libpng（贴图读写）
     TextShape.cpp           # OCCT STEPCAFControl_Reader（文字浮雕，非必需）
     Arrange.cpp             # libnest2d 的 NLopt 优化器（多物件自动排布，单物件切片用不到）
 )
@@ -104,6 +102,16 @@ file(GLOB _minilzo "${BAMBU_SRC}/src/minilzo/*.c")
 file(GLOB _qhull   "${BAMBU_SRC}/src/qhull/src/libqhull_r/*.c")
 file(GLOB _nest2d  "${BAMBU_SRC}/src/libnest2d/*.cpp")
 # clipper2 也是内联的，Clipper2Utils.cpp 需要它的实现
+# Format/ 下的加载器是 Model::read_from_file() 的硬依赖（load_stl/load_obj/load_amf...），
+# 早期把整个 Format 目录剪掉了，导致链接缺符号。这里补回来，只排除依赖重库的。
+file(GLOB _format "${BAMBU_SRC}/src/libslic3r/Format/*.cpp")
+list(REMOVE_ITEM _format
+    "${BAMBU_SRC}/src/libslic3r/Format/STEP.cpp"          # OCCT
+    "${BAMBU_SRC}/src/libslic3r/Format/AssimpImport.cpp"  # assimp（用 format_stub.cpp 顶替）
+    "${BAMBU_SRC}/src/libslic3r/Format/SL1.cpp"           # SLA 子系统
+    "${BAMBU_SRC}/src/libslic3r/Format/svg.cpp"           # SVG 导出
+)
+
 file(GLOB _clipper "${BAMBU_SRC}/src/clipper2/Clipper2Lib/src/*.cpp")
 # libslic3r 里 Brim.cpp 等还引用老版 clipper（ClipperLib_Z），以及新版 qhull 的
 # C++ 接口（orgQhull::Qhull）和 semver C 库。这些不编进去，链接时缺符号。
@@ -121,6 +129,7 @@ if(CORE_PROBE)
     set(_nest2d "")
     set(_clipper "")
     set(_qhullcpp "")
+    set(_format "")
     set(_semver "")
     set(_tess "")
 endif()
@@ -139,7 +148,9 @@ target_include_directories(clipper_z_obj PRIVATE
     "${DEPS}/eigen/include"
     "${DEPS}/boost/include")
 
-add_library(slic3r STATIC ${_srcs} ${_admesh} ${_miniz} ${_minilzo} ${_qhull} ${_nest2d} ${_clipper} ${_qhullcpp} ${_semver} ${_tess} $<TARGET_OBJECTS:clipper_z_obj>)
+add_library(slic3r STATIC ${_srcs} ${_admesh} ${_miniz} ${_minilzo} ${_qhull} ${_nest2d} ${_clipper} ${_qhullcpp} ${_semver} ${_tess} ${_format}
+    "${CMAKE_CURRENT_LIST_DIR}/shim/format_stub.cpp"
+    $<TARGET_OBJECTS:clipper_z_obj>)
 
 target_include_directories(slic3r PUBLIC
     # shim 必须排在最前面：用 CommonCrypto 顶掉 openssl/md5.h、openssl/sha.h，
