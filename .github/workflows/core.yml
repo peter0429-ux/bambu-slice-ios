@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       probe:
-        description: "只编探针文件（快）"
+        description: "只编探针文件（快，验证 include/宏）"
         type: boolean
-        default: true
+        default: false
   push:
     paths:
       - "core/**"
@@ -74,13 +74,15 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/scripts/ios.toolchain.cmake" \
             -DCMAKE_BUILD_TYPE=Release \
             -DBAMBU_SRC="${{ github.workspace }}/vendor" \
-            -DCORE_PROBE=${{ github.event.inputs.probe == 'false' && 'OFF' || 'ON' }} \
+            -DCORE_PROBE=${{ github.event.inputs.probe == 'true' && 'ON' || 'OFF' }} \
             2>&1 | tee cfg.log
 
       - name: Build
         run: |
           set -o pipefail
-          cmake --build build-core -j"$(sysctl -n hw.ncpu)" 2>&1 | tee build.log
+          # -k 0 让 make 遇错继续，一次把所有错误都暴露出来，
+          # 免得一轮只修一个错、白白多跑十轮
+          cmake --build build-core -j"$(sysctl -n hw.ncpu)" -- -k 0 2>&1 | tee build.log
 
       - name: 错误注解
         if: failure()
