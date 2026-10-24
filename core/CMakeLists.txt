@@ -166,6 +166,7 @@ target_include_directories(slic3r PUBLIC
     "${DEPS}/cgal/include"
     "${DEPS}/eigen/include"
     "${DEPS}/zlib/include"
+    "${DEPS}/png/include"
     "${DEPS}/expat/include"
     "${DEPS}/cereal/include"
 )

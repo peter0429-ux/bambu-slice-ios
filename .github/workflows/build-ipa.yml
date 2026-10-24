@@ -25,6 +25,8 @@ jobs:
   # .a 几十 MB 不进 git，用 artifact 在同一次 run 里传给 build job
   core:
     runs-on: macos-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -80,6 +82,26 @@ jobs:
             grep -nE "error:|CMake Error|fatal error" "$f" \
               | awk '!seen[$0]++' | head -9 | sed "s/^/::error::[$f] /" || true
           done
+
+          # 注解锁不到上下文，把完整错误清单推到 ci-log 分支，
+          # 这样本地 git fetch 就能读到（含 include 链和 note 行）
+          mkdir -p ci-log
+          {
+            echo "# core run #${{ github.run_number }}  commit ${{ github.sha }}"
+            for f in core-cfg.log core-build.log deps.log; do
+              [ -f "$f" ] || continue
+              echo
+              echo "## $f"
+              grep -nE "error:|fatal error|CMake Error|note: |undefined|redefinition" "$f" \
+                | awk '!seen[$0]++' | head -120 || true
+            done
+          } > ci-log/core-failure.txt
+          git config user.name "ci-bot"
+          git config user.email "ci-bot@users.noreply.github.com"
+          git checkout -B ci-log
+          git add -f ci-log/core-failure.txt
+          git commit -m "core failure log run #${{ github.run_number }}" || exit 0
+          git push -f origin ci-log || true
 
       - name: Arch assert
         run: |

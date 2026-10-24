@@ -85,6 +85,29 @@ build_zlib() {
   log "zlib 完成: ${FW}/zlib"
 }
 
+# libpng：libslic3r 的 EdgeGrid 用 png.h 读写「已切片层掩膜」，
+# 而 Brim 又依赖 EdgeGrid，所以 iOS 上必须编一个。依赖 zlib。
+PNG_VERSION=1.6.43
+
+build_png() {
+  log "libpng ${PNG_VERSION}"
+  fetch "https://github.com/pnggroup/libpng/archive/refs/tags/v${PNG_VERSION}.tar.gz" "${WORK}/png"
+
+  cmake -S "${WORK}/png" -B "${WORK}/png/build-ios" \
+        -DCMAKE_TOOLCHAIN_FILE="${ROOT}/scripts/ios.toolchain.cmake" \
+        -DCMAKE_OSX_DEPLOYMENT_TARGET="${DEPLOYMENT_TARGET}" \
+        -DCMAKE_INSTALL_PREFIX="${FW}/png" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DPNG_SHARED=OFF -DPNG_STATIC=ON \
+        -DPNG_TESTS=OFF -DPNG_TOOLS=OFF \
+        -DPNG_FRAMEWORK=OFF \
+        -DPNG_ARM_NEON=off \
+        -DZLIB_ROOT="${FW}/zlib"
+  cmake --build "${WORK}/png/build-ios" -j"${JOBS}" --config Release --target png_static
+  cmake --install "${WORK}/png/build-ios" --config Release
+  log "libpng 完成: ${FW}/png"
+}
+
 build_expat() {
   log "expat ${EXPAT_VERSION}"
   fetch "https://github.com/libexpat/libexpat/releases/download/R_${EXPAT_VERSION//./_}/expat-${EXPAT_VERSION}.tar.gz" "${WORK}/expat"
@@ -192,6 +215,7 @@ build_cereal() {
 case "${1:-all}" in
   eigen)  build_eigen ;;
   zlib)   build_zlib ;;
+  png)    build_png ;;
   expat)  build_expat ;;
   tbb)    build_tbb ;;
   boost)  build_boost ;;
@@ -200,6 +224,7 @@ case "${1:-all}" in
   all)
     build_eigen
     build_zlib
+    build_png
     build_expat
     build_tbb
     build_boost
@@ -208,7 +233,7 @@ case "${1:-all}" in
     log "依赖构建结束。产物：${FW}"
     ;;
   *)
-    echo "用法: $0 [all|eigen|zlib|expat|tbb|boost|cgal|cereal]"
+    echo "用法: $0 [all|eigen|zlib|png|expat|tbb|boost|cgal|cereal]"
     exit 1
     ;;
 esac

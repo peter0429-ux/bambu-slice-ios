@@ -71,6 +71,8 @@ targets:
           - -ltbb -ltbbmalloc
           - -L$(SRCROOT)/Frameworks/zlib/lib
           - -lz
+          - -L$(SRCROOT)/Frameworks/png/lib
+          - -lpng
           - -L$(SRCROOT)/Frameworks/expat/lib
           - -lexpat
 
