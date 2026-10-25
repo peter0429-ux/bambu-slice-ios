@@ -17,6 +17,7 @@
 
 #if BAMBU_CORE_ENABLED
 
+#include <algorithm>
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
@@ -183,10 +184,20 @@ Slic3r::DynamicPrintConfig make_config(const Settings &s, std::vector<std::strin
     set_double(cfg, "sparse_infill_density", s.infill_density * 100.0);
     set_str(cfg, "sparse_infill_pattern", s.infill_pattern);
 
-    // 支撑
-    set_bool(cfg, "support_material", s.support_enabled);
-    set_double(cfg, "support_material_threshold", s.support_threshold);
+    // 支撑：Bambu 的键是 enable_support / support_threshold_angle（角度，度），
+    // 不是 PrusaSlicer 的 support_material / support_material_threshold。
+    // 用旧键名会静默失效（cfg.has() 返回 false，setter 直接跳过）。
+    set_bool(cfg, "enable_support", s.support_enabled);
+    set_double(cfg, "support_threshold_angle", s.support_threshold);
+    set_str(cfg, "support_type", "normal(auto)");
+    set_str(cfg, "support_style", "default");
+    set_double(cfg, "support_top_z_distance", 0.2);
+    set_double(cfg, "support_bottom_z_distance", 0.2);
+
+    // 裙边：Bambu 用 brim_type 枚举控制，brim_width 只给宽度
+    set_str(cfg, "brim_type", s.brim_enabled ? "outer_only" : "no_brim");
     set_double(cfg, "brim_width", s.brim_enabled ? 5.0 : 0.0);
+    set_double(cfg, "brim_object_gap", 0.1);
 
     // 用户直通覆盖放在最后，优先级最高
     for (const auto &kv : s.overrides) {
@@ -304,6 +315,22 @@ bool slice(const std::string &path,
         std::vector<std::string> warnings;
         Slic3r::DynamicPrintConfig cfg = make_config(s, warnings);
 
+        // 尺寸自检：STL 单位搞错（m / cm / inch 写成 mm）是"只切出几层、
+        // 打印时间只有 1 分钟"的典型原因，先把它排掉。
+        {
+            const Slic3r::Vec3d sz = model.bounding_box().size();
+            const double maxdim = std::max({sz.x(), sz.y(), sz.z()});
+            char buf[192];
+            std::snprintf(buf, sizeof(buf),
+                          "模型尺寸 %.1f x %.1f x %.1f mm", sz.x(), sz.y(), sz.z());
+            warnings.push_back(buf);
+            if (maxdim > 0.0 && (maxdim < 2.0 || maxdim > 1500.0)) {
+                std::snprintf(buf, sizeof(buf),
+                              "模型最大边 %.2f mm 明显异常，STL 单位可能不是毫米", maxdim);
+                warnings.push_back(buf);
+            }
+        }
+
         // 剔掉 keys_map 未初始化的枚举项，否则 export_gcode 写配置回显时空指针崩溃
         patch_broken_enum_options(cfg, warnings);
 
@@ -384,18 +411,44 @@ bool slice(const std::string &path,
             return false;
         }
 
-        // 统计：优先用引擎自己算的，缺失时从 G-code 尾部兜底解析
+        // 统计：用 GCodeProcessor 自己算的结果。
+        // 之前从 G-code 文本里数 ";LAYER_CHANGE" 是错的 —— Bambu 分支不写这个标记，
+        // 所以层数永远是 0、时间永远是 0。
         out.layer_count = 0;
-        {
-            size_t pos = 0;
-            while ((pos = out.gcode.find(";LAYER_CHANGE", pos)) != std::string::npos) {
-                ++out.layer_count;
-                pos += 13;
-            }
-        }
         out.duration_seconds = 0.0;
         out.filament_mm = 0.0;
         out.filament_grams = 0.0;
+        {
+            const auto &ps = gcode_result.print_statistics;
+            using TimeMode = Slic3r::GCodeProcessorResult::PrintEstimatedStatistics::ETimeMode;
+            const auto &normal = ps.modes[static_cast<size_t>(TimeMode::Normal)];
+            out.duration_seconds = normal.time;              // 秒
+            out.layer_count      = normal.layers_times.size();
+
+            double grams = 0.0, length_mm = 0.0;
+            for (const auto &kv : ps.total_volumes_per_extruder) {
+                const size_t idx = kv.first;
+                const double volume_mm3 = kv.second;
+                const double density = (idx < ps.filament_densities.size())
+                                     ? ps.filament_densities[idx] : 1.24;   // g/cm3
+                grams += volume_mm3 * density / 1000.0;
+                const double fil_d = (idx < ps.filament_diameters.size())
+                                   ? ps.filament_diameters[idx] : 1.75;      // mm
+                const double area = 3.14159265358979323846 * (fil_d * 0.5) * (fil_d * 0.5);
+                if (area > 0.0) length_mm += volume_mm3 / area;
+            }
+            out.filament_grams = grams;
+            out.filament_mm    = length_mm;
+        }
+        if (out.layer_count == 0) {
+            // 兜底：至少能从 G-code 里数出层数标记（不同分支写法不一）
+            for (const char *tag : {";LAYER_CHANGE", "; CHANGE_LAYER", ";LAYER:"}) {
+                size_t pos = 0;
+                size_t cnt = 0;
+                while ((pos = out.gcode.find(tag, pos)) != std::string::npos) { ++cnt; pos += 8; }
+                if (cnt > 0) { out.layer_count = cnt; break; }
+            }
+        }
         out.backend = "libslic3r";
         out.warnings = std::move(warnings);
 
