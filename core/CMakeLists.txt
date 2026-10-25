@@ -160,6 +160,7 @@ target_include_directories(clipper_z_obj PRIVATE
 add_library(slic3r STATIC ${_srcs} ${_admesh} ${_miniz} ${_minilzo} ${_qhull} ${_nest2d} ${_clipper} ${_qhullcpp} ${_semver} ${_tess}
     "${CMAKE_CURRENT_LIST_DIR}/shim/format_stub.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/shim/fuzzyskin_stub.cpp"
+    "${CMAKE_CURRENT_LIST_DIR}/shim/locale_stub.cpp"
     $<TARGET_OBJECTS:clipper_z_obj>)
 
 target_include_directories(slic3r PUBLIC
