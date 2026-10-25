@@ -178,6 +178,36 @@ Slic3r::DynamicPrintConfig make_config(const Settings &s, std::vector<std::strin
     return cfg;
 }
 
+// Bambu 上游有个坑：ConfigOptionEnumsGeneric 的构造函数有 3 个重载忘了传
+// keys_map（默认给 nullptr）。用到这些构造的配置项，在 GCode::append_full_config
+// 里序列化（往 G-code 头部写 "; key = value" 注释）时会 deref 空指针。
+//
+// 切到 75% 后崩在 ConfigOptionEnumsGenericTempl<false>::serialize_single_value
+// 就是这个原因。这些项只影响 G-code 头部的配置回显，不影响打印路径，直接剔掉。
+static void drop_broken_enum_options(Slic3r::DynamicPrintConfig &cfg,
+                                     std::vector<std::string> &warnings) {
+    std::vector<std::string> broken;
+    for (const std::string &key : cfg.keys()) {
+        const Slic3r::ConfigOption *opt = cfg.option(key);
+        if (opt == nullptr || opt->type() != Slic3r::coEnums)
+            continue;
+        bool null_map = false;
+        if (auto *g = dynamic_cast<const Slic3r::ConfigOptionEnumsGeneric *>(opt))
+            null_map = (g->keys_map == nullptr);
+        else if (auto *gn = dynamic_cast<const Slic3r::ConfigOptionEnumsGenericNullable *>(opt))
+            null_map = (gn->keys_map == nullptr);
+        if (null_map)
+            broken.push_back(key);
+    }
+    for (const std::string &key : broken)
+        cfg.erase(key);
+    if (!broken.empty()) {
+        std::string msg = "已剔除 keys_map 为空的枚举项 " + std::to_string(broken.size()) + " 个:";
+        for (size_t i = 0; i < broken.size() && i < 6; ++i) msg += " " + broken[i];
+        warnings.push_back(msg);
+    }
+}
+
 // ── 进度回调 ─────────────────────────────────────────────────
 void on_status(const Slic3r::PrintBase::SlicingStatus &status, const ProgressFn &progress) {
     if (!progress) return;
@@ -245,6 +275,9 @@ bool slice(const std::string &path,
         report(0.10f, "准备配置");
         std::vector<std::string> warnings;
         Slic3r::DynamicPrintConfig cfg = make_config(s, warnings);
+
+        // 剔掉 keys_map 未初始化的枚举项，否则 export_gcode 写配置回显时空指针崩溃
+        drop_broken_enum_options(cfg, warnings);
 
         place_on_bed(model, s);
 
