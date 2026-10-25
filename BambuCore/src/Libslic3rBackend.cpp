@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <memory>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -30,6 +31,8 @@
 // Bambu Studio / PrusaSlicer 都把 libslic3r 放在 src/libslic3r 下，
 // 且以 "libslic3r/xxx.hpp" 形式互相引用，所以 include path 指到 src/ 即可。
 #include "libslic3r/Model.hpp"
+#include <boost/log/core.hpp>
+
 #include "libslic3r/Print.hpp"
 #include "libslic3r/PrintConfig.hpp"
 #include "libslic3r/libslic3r.h"
@@ -45,6 +48,23 @@ namespace bambu::libslic3r_backend {
 namespace {
 
 std::atomic<bool> g_cancel{false};
+
+// 关掉 boost.log。
+//
+// 这不是为了"清爽"，是必须的：App 里没有注册任何 sink，但 boost.log 的
+// core 默认 logging_enabled() == true，于是每一条
+//     BOOST_LOG_TRIVIAL(info) << "..." << log_memory_info();
+// 的流式参数**照样会被求值**。而 log_memory_info() 在 iOS 上没有正确实现
+// （桌面版读 /proc/self/status 或 Windows API），一求值就踩空指针。
+//
+// GCode::do_export() 开头就有这么一行，所以切到 75% 之后、导出 G-code 时崩。
+// 关掉 enabled 后 record 变无效，for 循环体不执行，参数不会被求值。
+void silence_boost_log() {
+    static std::once_flag once;
+    std::call_once(once, [] {
+        boost::log::core::get()->set_logging_enabled(false);
+    });
+}
 
 // ── 配置拼装 ─────────────────────────────────────────────────
 
@@ -257,6 +277,7 @@ bool slice(const std::string &path,
            SliceOutput &out,
            std::string &error) {
     g_cancel.store(false);
+    silence_boost_log();
 
     auto report = [&](float f, const std::string &stage) {
         if (progress) progress(f, stage);
