@@ -12,6 +12,9 @@
 //  真要用这些格式时，用户会看到清楚的错误提示，而不是崩溃。
 //
 
+#include <cstdio>
+#include <string>
+
 #include "libslic3r/Format/AssimpImport.hpp"
 
 namespace Slic3r {
