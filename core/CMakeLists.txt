@@ -103,16 +103,6 @@ file(GLOB _minilzo "${BAMBU_SRC}/src/minilzo/*.c")
 file(GLOB _qhull   "${BAMBU_SRC}/src/qhull/src/libqhull_r/*.c")
 file(GLOB _nest2d  "${BAMBU_SRC}/src/libnest2d/*.cpp")
 # clipper2 也是内联的，Clipper2Utils.cpp 需要它的实现
-# Format/ 下的加载器是 Model::read_from_file() 的硬依赖（load_stl/load_obj/load_amf...），
-# 早期把整个 Format 目录剪掉了，导致链接缺符号。这里补回来，只排除依赖重库的。
-file(GLOB _format "${BAMBU_SRC}/src/libslic3r/Format/*.cpp")
-list(REMOVE_ITEM _format
-    "${BAMBU_SRC}/src/libslic3r/Format/STEP.cpp"          # OCCT
-    "${BAMBU_SRC}/src/libslic3r/Format/AssimpImport.cpp"  # assimp（用 format_stub.cpp 顶替）
-    "${BAMBU_SRC}/src/libslic3r/Format/SL1.cpp"           # SLA 子系统
-    "${BAMBU_SRC}/src/libslic3r/Format/svg.cpp"           # SVG 导出
-)
-
 file(GLOB _clipper "${BAMBU_SRC}/src/clipper2/Clipper2Lib/src/*.cpp")
 # libslic3r 里 Brim.cpp 等还引用老版 clipper（ClipperLib_Z），以及新版 qhull 的
 # C++ 接口（orgQhull::Qhull）和 semver C 库。这些不编进去，链接时缺符号。
@@ -130,9 +120,32 @@ if(CORE_PROBE)
     set(_nest2d "")
     set(_clipper "")
     set(_qhullcpp "")
-    set(_format "")
     set(_semver "")
     set(_tess "")
+endif()
+
+# ── 自动补齐 sources.txt 的遗漏 ─────────────────────────────
+# sources.txt 是早期从他们的 CMakeLists 抽的，漏了 Format/ 整个目录、
+# Triangulation.cpp 等（都是 Model::read_from_file 的硬依赖）。
+# 这里用「全量 glob 减去已有」求差集，一次补齐，避免逐轮缺一个补一个。
+file(GLOB_RECURSE _all_src
+    "${BAMBU_SRC}/src/libslic3r/*.cpp"
+    "${BAMBU_SRC}/src/libslic3r/*.mm"
+    "${BAMBU_SRC}/src/libslic3r/*.c")
+# 排除：重库依赖 / 非切片子系统
+list(FILTER _all_src EXCLUDE REGEX "/SLA/")
+list(FILTER _all_src EXCLUDE REGEX "/(STEP|AssimpImport|SL1|svg|TexturePainting|TextureToColor|FuzzySkin|TextShape|Arrange)\\.cpp$")
+
+set(_extra "")
+foreach(f IN LISTS _all_src)
+    if(NOT f IN_LIST _srcs)
+        list(APPEND _extra "${f}")
+    endif()
+endforeach()
+if(_extra)
+    list(LENGTH _extra _ne)
+    message(STATUS "补齐 sources.txt 遗漏 ${_ne} 个文件")
+    list(APPEND _srcs ${_extra})
 endif()
 
 # 老版 clipper 的 Z 版。clipper_z.cpp 是 #define CLIPPERLIB_USE_XYZ + include "clipper.cpp"
@@ -149,7 +162,7 @@ target_include_directories(clipper_z_obj PRIVATE
     "${DEPS}/eigen/include"
     "${DEPS}/boost/include")
 
-add_library(slic3r STATIC ${_srcs} ${_admesh} ${_miniz} ${_minilzo} ${_qhull} ${_nest2d} ${_clipper} ${_qhullcpp} ${_semver} ${_tess} ${_format}
+add_library(slic3r STATIC ${_srcs} ${_admesh} ${_miniz} ${_minilzo} ${_qhull} ${_nest2d} ${_clipper} ${_qhullcpp} ${_semver} ${_tess}
     "${CMAKE_CURRENT_LIST_DIR}/shim/format_stub.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/shim/fuzzyskin_stub.cpp"
     $<TARGET_OBJECTS:clipper_z_obj>)

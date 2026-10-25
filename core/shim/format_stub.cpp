@@ -24,4 +24,17 @@ bool load_assimp_textured_model(const std::string & /*path*/,
     return false;
 }
 
+// assimp 导入流程里还会用到这两个工具函数（Model::read_from_file 无条件引用）：
+//   make_temp_stl_with_modelio  把模型转成临时 STL 供 assimp 读
+//   delete_temp_file            删掉那个临时文件
+// 我们不走 assimp 分支，第一个返回空串表示「没能生成」，调用方会据此报错。
+std::string make_temp_stl_with_modelio(const std::string & /*path*/) {
+    return std::string();
+}
+
+void delete_temp_file(const std::string &path) {
+    if (!path.empty())
+        std::remove(path.c_str());
+}
+
 } // namespace Slic3r
