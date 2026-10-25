@@ -184,26 +184,32 @@ Slic3r::DynamicPrintConfig make_config(const Settings &s, std::vector<std::strin
 //
 // 切到 75% 后崩在 ConfigOptionEnumsGenericTempl<false>::serialize_single_value
 // 就是这个原因。这些项只影响 G-code 头部的配置回显，不影响打印路径，直接剔掉。
-static void drop_broken_enum_options(Slic3r::DynamicPrintConfig &cfg,
-                                     std::vector<std::string> &warnings) {
-    std::vector<std::string> broken;
+// 注意：不能把坏项 erase 掉！Print::apply() 里会按 key 取配置项
+// （option<ConfigOptionX>("xxx")->value），删掉就变成 nullptr 解引用，
+// 崩在 Print::apply 里（比原来更早）。
+//
+// 正确做法是给它补一个空映射表：serialize_single_value 里是
+//     for (const auto& kvp : *keys_map) if (kvp.second == v) ss << kvp.first;
+// 空 map 只是循环 0 次、输出空值，不会崩，也不影响任何刀路计算
+// （这些项只在 G-code 头部回显配置）。
+static void patch_broken_enum_options(Slic3r::DynamicPrintConfig &cfg,
+                                      std::vector<std::string> &warnings) {
+    static const Slic3r::t_config_enum_values kEmptyEnumValues;
+    std::vector<std::string> patched;
     for (const std::string &key : cfg.keys()) {
-        const Slic3r::ConfigOption *opt = cfg.option(key);
+        Slic3r::ConfigOption *opt = cfg.option(key);
         if (opt == nullptr || opt->type() != Slic3r::coEnums)
             continue;
-        bool null_map = false;
-        if (auto *g = dynamic_cast<const Slic3r::ConfigOptionEnumsGeneric *>(opt))
-            null_map = (g->keys_map == nullptr);
-        else if (auto *gn = dynamic_cast<const Slic3r::ConfigOptionEnumsGenericNullable *>(opt))
-            null_map = (gn->keys_map == nullptr);
-        if (null_map)
-            broken.push_back(key);
+        if (auto *g = dynamic_cast<Slic3r::ConfigOptionEnumsGeneric *>(opt)) {
+            if (g->keys_map == nullptr) { g->keys_map = &kEmptyEnumValues; patched.push_back(key); }
+        } else if (auto *gn = dynamic_cast<Slic3r::ConfigOptionEnumsGenericNullable *>(opt)) {
+            if (gn->keys_map == nullptr) { gn->keys_map = &kEmptyEnumValues; patched.push_back(key); }
+        }
     }
-    for (const std::string &key : broken)
-        cfg.erase(key);
-    if (!broken.empty()) {
-        std::string msg = "已剔除 keys_map 为空的枚举项 " + std::to_string(broken.size()) + " 个:";
-        for (size_t i = 0; i < broken.size() && i < 6; ++i) msg += " " + broken[i];
+    if (!patched.empty()) {
+        std::string msg = "已为 " + std::to_string(patched.size())
+                        + " 个枚举项补空映射表（否则导出 G-code 时空指针崩溃）:";
+        for (size_t i = 0; i < patched.size() && i < 6; ++i) msg += " " + patched[i];
         warnings.push_back(msg);
     }
 }
@@ -277,7 +283,7 @@ bool slice(const std::string &path,
         Slic3r::DynamicPrintConfig cfg = make_config(s, warnings);
 
         // 剔掉 keys_map 未初始化的枚举项，否则 export_gcode 写配置回显时空指针崩溃
-        drop_broken_enum_options(cfg, warnings);
+        patch_broken_enum_options(cfg, warnings);
 
         place_on_bed(model, s);
 
