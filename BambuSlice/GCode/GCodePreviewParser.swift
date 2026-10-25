@@ -71,12 +71,22 @@ enum GCodePreviewParser {
 
             // ── 注释即元数据 ──
             if line.hasPrefix(";") {
-                if line.hasPrefix(";LAYER:") || line.hasPrefix(";LAYER_CHANGE") {
+                // 层标记各分支写法不同：
+                //   PrusaSlicer / 老 Slic3r:  ";LAYER_CHANGE" 或 ";LAYER:2"
+                //   Bambu Studio:             "; CHANGE_LAYER"
+                // 用 contains 容错，别用 hasPrefix 精确匹配。
+                if line.hasPrefix(";LAYER:") || line.contains("LAYER_CHANGE")
+                    || line.contains("CHANGE_LAYER") {
                     flush(&layers, &current)
                     return
                 }
-                if line.hasPrefix(";Z:") {
-                    if let v = Double(line.dropFirst(3)) { current.z = Float(v) }
+                // 层高：PrusaSlicer 是 ";Z:0.2"，Bambu 是 "; Z_HEIGHT: 0.2"
+                if line.hasPrefix(";Z:") || line.hasPrefix("; Z_HEIGHT:") {
+                    let parts = line.split(separator: ":", maxSplits: 1)
+                    if parts.count == 2,
+                       let v = Double(parts[1].trimmingCharacters(in: .whitespaces)) {
+                        current.z = Float(v)
+                    }
                     return
                 }
                 let marker = line.uppercased()

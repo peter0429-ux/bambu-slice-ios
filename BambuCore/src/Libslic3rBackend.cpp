@@ -176,6 +176,10 @@ Slic3r::DynamicPrintConfig make_config(const Settings &s, std::vector<std::strin
 
     // ── 耗材类型 / 热床 ───────────────────────────────────
     set_str(cfg, "filament_type", "PLA");
+    // 密度不设的话 G-code 头部 weight 就是 0，UI 的耗材重量也拿不到
+    set_double(cfg, "filament_density", 1.24);      // PLA g/cm3
+    set_double(cfg, "filament_cost", 0.0);
+    set_double(cfg, "filament_flow_ratio", 0.98);
     set_str(cfg, "curr_bed_type", "Textured PEI Plate");
 
     // ── Bambu 新键名（旧名 perimeters/fill_density 走 legacy 映射，
