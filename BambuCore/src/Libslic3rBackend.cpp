@@ -48,15 +48,26 @@ std::atomic<bool> g_cancel{false};
 
 // ── 配置拼装 ─────────────────────────────────────────────────
 
-void set_str(Slic3r::DynamicPrintConfig &cfg, const char *key, const std::string &value) {
-    // set_deserialize 走的是配置项自己的反序列化，不用为每个类型记住
-    // ConfigOptionFloat / Bool / Int / Enum 的构造方式。
-    Slic3r::ConfigSubstitutionContext ctxt{ Slic3r::ForwardCompatibilitySubstitutionRule::Disable };
-    cfg.set_deserialize(key, value, ctxt);
+// Bambu 分支和各 fork 的键名不完全一样（比如 PrusaSlicer 的 perimeters 在这里
+// 叫 wall_loops，perimeter_generator 叫 wall_generator）。所以这里统一做两件事：
+//   1. 键不存在就直接跳过，不当成错误
+//   2. 值非法（枚举值拼错等）也跳过，不让它抛到外面把整个切片打断
+bool set_str(Slic3r::DynamicPrintConfig &cfg, const char *key, const std::string &value) {
+    if (!cfg.has(key)) return false;
+    try {
+        Slic3r::ConfigSubstitutionContext ctxt{ Slic3r::ForwardCompatibilitySubstitutionRule::Disable };
+        cfg.set_deserialize(key, value, ctxt);
+        return true;
+    } catch (...) {
+        return false;
+    }
 }
 
 void set_double(Slic3r::DynamicPrintConfig &cfg, const char *key, double v) {
-    set_str(cfg, key, std::to_string(v));
+    if (!cfg.has(key)) return;
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "%.6g", v);
+    set_str(cfg, key, buf);
 }
 
 void set_int(Slic3r::DynamicPrintConfig &cfg, const char *key, int v) {
@@ -112,6 +123,44 @@ Slic3r::DynamicPrintConfig make_config(const Settings &s, std::vector<std::strin
     set_double(cfg, "first_layer_temperature", s.nozzle_temp);
     set_double(cfg, "bed_temperature", s.bed_temp);
     set_double(cfg, "first_layer_bed_temperature", s.bed_temp);
+
+    // ── Bambu 分支特有：耗材/挤出机索引 ────────────────────
+    // libslic3r 里大量用 print_config->nozzle_diameter.get_at(wall_filament - 1)
+    // 取喷嘴直径。这个值若不是 1，就是 get_at(-1) 越界读，会拿到垃圾宽度，
+    // Flow 变成 NaN/0，后续 Arachne 生成零宽挤出线时踩空指针（0x6）。
+    set_int(cfg, "wall_filament", 1);
+    set_int(cfg, "solid_infill_filament", 1);
+    set_int(cfg, "sparse_infill_filament", 1);
+    set_int(cfg, "wipe_tower_filament", 1);
+
+    // ── 周界生成器：先用经典算法 ──────────────────────────
+    // Arachne（变宽挤出）对参数完整性要求很高，缺项就崩；经典算法稳得多。
+    // 主体流程跑通、参数补齐后再考虑切回 "arachne"。
+    if (!set_str(cfg, "wall_generator", "classic") &&
+        !set_str(cfg, "wall_generator", "Classic"))
+        warnings.push_back("无法指定 wall_generator，周界算法可能仍是 Arachne");
+
+    // ── 线宽：显式给值 ────────────────────────────────────
+    // 不给时引擎会用 layer_height 推算，推不好会得到 0 宽度，之后做除就出 NaN。
+    // 直接给喷嘴直径最稳。
+    set_double(cfg, "line_width", s.nozzle_diameter);
+    set_double(cfg, "initial_layer_line_width", s.nozzle_diameter);
+    set_double(cfg, "outer_wall_line_width", s.nozzle_diameter);
+    set_double(cfg, "inner_wall_line_width", s.nozzle_diameter);
+    set_double(cfg, "sparse_infill_line_width", s.nozzle_diameter);
+    set_double(cfg, "internal_solid_infill_line_width", s.nozzle_diameter);
+    set_double(cfg, "top_surface_line_width", s.nozzle_diameter);
+    set_double(cfg, "support_line_width", s.nozzle_diameter);
+
+    // ── 耗材类型 / 热床 ───────────────────────────────────
+    set_str(cfg, "filament_type", "PLA");
+    set_str(cfg, "curr_bed_type", "Textured PEI Plate");
+
+    // ── Bambu 新键名（旧名 perimeters/fill_density 走 legacy 映射，
+    //    这里显式用新名，避免映射过程中的语义偏差）
+    set_int(cfg, "wall_loops", s.wall_loops);
+    set_double(cfg, "sparse_infill_density", s.infill_density * 100.0);
+    set_str(cfg, "sparse_infill_pattern", s.infill_pattern);
 
     // 支撑
     set_bool(cfg, "support_material", s.support_enabled);
