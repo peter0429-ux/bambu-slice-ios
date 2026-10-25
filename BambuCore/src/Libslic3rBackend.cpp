@@ -19,6 +19,7 @@
 
 #include <atomic>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <memory>
 #include <sstream>
@@ -200,7 +201,9 @@ bool slice(const std::string &path,
 
         report(0.15f, "构建打印任务");
         Slic3r::Print print;
-        print.set_status_callback([&](const Slic3r::PrintBase::SlicingStatus &st) {
+        // 按值捕获 progress（std::function 拷贝）：process() 内部由 TBB
+        // 工作线程回调，按引用捕获会在 slice() 返回后悬空。
+        print.set_status_callback([progress](const Slic3r::PrintBase::SlicingStatus &st) {
             on_status(st, progress);
         });
 
@@ -217,32 +220,44 @@ bool slice(const std::string &path,
 
         if (g_cancel.load()) { error = "已取消"; return false; }
 
-        // ── [CP-5] G-code 生成 ──────────────────────────────
-        report(0.25f, "生成 G-code");
-#if BBS_HAVE_GCODE_GENERATOR
-        {
-            // Bambu 分支：GCode::Generator 把结果放进 GCodeResult
-            Slic3r::GCode::Generator generator;
-            generator.generate(print);
-
-            Slic3r::GCodeResult result;
-            generator.process(result);
-            out.gcode = result.gcode;   // 部分版本是 result.gcode_string()
+        // ★ 核心：真正执行切片。
+        //   Print::apply() 只是把配置和模型"挂"到打印任务上，process() 才是
+        //   分层、生成 perimeter/infill/支撑的真正计算。少了这一步，后面的
+        //   export_gcode() 访问的全是未初始化的层数据，在 libslic3r 里会直接
+        //   踩空指针 → SIGSEGV → App 立即闪退且没有任何 UI 提示。
+        report(0.25f, "切片计算");
+        try {
+            print.process();
+        } catch (const Slic3r::CanceledException &) {
+            error = "已取消";
+            return false;
         }
-#else
-        {
-            // PrusaSlicer 分支：写到临时文件再读回，避免依赖 GCodeResult 的内部布局
-            const std::string tmp = path + ".tmp.gcode";
-            print.export_gcode(tmp, nullptr, nullptr);
 
-            std::ifstream in(tmp, std::ios::binary);
-            if (!in) { error = "G-code 导出失败"; return false; }
+        if (g_cancel.load()) { error = "已取消"; return false; }
+        report(0.90f, "生成 G-code");
+        {
+            // 统一走 Print::export_gcode()：签名稳定（返回实际写入的路径）。
+            // GCode::Generator 的内部 API 在不同 tag 间变过，先不用它。
+            //
+            // 临时文件必须落在沙盒的 TMPDIR 里：模型文件可能在只读目录
+            // （比如通过"文件"App 从 iCloud 拷进来的），往 path 旁边写会失败。
+            const char *tmpdir_env = std::getenv("TMPDIR");
+            const std::string tmpdir = (tmpdir_env && *tmpdir_env) ? tmpdir_env : "/tmp";
+            const std::string tmp = tmpdir + "/bambu_slice_tmp.gcode";
+
+            std::string written = print.export_gcode(tmp, nullptr, nullptr);
+            if (written.empty()) written = tmp;
+
+            std::ifstream in(written, std::ios::binary);
+            if (!in) {
+                error = "G-code 导出失败：无法读取 " + written;
+                return false;
+            }
             std::ostringstream ss;
             ss << in.rdbuf();
             out.gcode = ss.str();
-            std::remove(tmp.c_str());
+            std::remove(written.c_str());
         }
-#endif
 
         if (out.gcode.empty()) {
             error = "G-code 为空，切片未产生任何路径";

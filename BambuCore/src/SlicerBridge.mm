@@ -201,7 +201,20 @@ static NSError *makeError(BBSlicerErrorCode code, NSString *message) {
 
     bambu::SliceOutput out;
     std::string err;
-    if (!_core->slice(toStd(path), s, fn, out, err)) {
+    // 这层保护只拦 ObjC 异常（比如进度块里抛的）。C++ 异常已经在
+    // libslic3r_backend::slice 内部 catch 过；真正的段错误（SIGSEGV）
+    // 谁也拦不住，只能靠崩溃日志定位。
+    BOOL ok = NO;
+    @try {
+        ok = _core->slice(toStd(path), s, fn, out, err) ? YES : NO;
+    } @catch (NSException *ex) {
+        if (error) {
+            *error = makeError(BBSlicerErrorSliceFailed,
+                               ex.reason ?: @"切片过程中发生异常");
+        }
+        return nil;
+    }
+    if (!ok) {
         if (error) {
             const BBSlicerErrorCode code =
                 (err == "已取消") ? BBSlicerErrorCancelled : BBSlicerErrorSliceFailed;
