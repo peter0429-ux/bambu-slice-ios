@@ -34,6 +34,7 @@
 #include <boost/log/core.hpp>
 
 #include "libslic3r/Print.hpp"
+#include "libslic3r/GCode/GCodeProcessor.hpp"
 #include "libslic3r/PrintConfig.hpp"
 #include "libslic3r/libslic3r.h"
 
@@ -354,7 +355,17 @@ bool slice(const std::string &path,
             const std::string tmpdir = (tmpdir_env && *tmpdir_env) ? tmpdir_env : "/tmp";
             const std::string tmp = tmpdir + "/bambu_slice_tmp.gcode";
 
-            std::string written = print.export_gcode(tmp, nullptr, nullptr);
+            // ⚠️ 这里必须给一个真实的 GCodeProcessorResult，不能传 nullptr。
+            //    Bambu 上游的 GCode::do_export() 末尾有两行没做判空：
+            //        result->label_object_enabled = m_enable_label_object;
+            //        result->support_material_on_wipe_tower = ...;
+            //    而它们前面的 `if (result != nullptr) { ... }` 块早已结束。
+            //    传 null 就写 0x0+0x1a1 → SIGSEGV（就是 0x1a1 那个崩溃地址）。
+            std::string written;
+            {
+                Slic3r::GCodeProcessorResult gcode_result;
+                written = print.export_gcode(tmp, &gcode_result, nullptr);
+            }
             if (written.empty()) written = tmp;
 
             std::ifstream in(written, std::ios::binary);
