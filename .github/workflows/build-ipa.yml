@@ -30,18 +30,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ccache：改了 clipper_z 之类的文件时，只有它重编，其余 .o 秒取
-      - name: Cache ccache
+      # ★ 内核产物缓存（最重要的一条）
+      #   key 只算「会影响内核」的东西：core/ 下的源码与 CMake、依赖脚本、工具链。
+      #   只改 BambuCore/** 或 BambuSlice/**（App 层）时 key 不变 → 直接命中，
+      #   整个 deps 编译 + libslic3r 编译全部跳过，只做 App 编译和链接。
+      #   实测：20 分钟 → 2-3 分钟。
+      - name: Cache libslic3r bundle
+        id: libcache
         uses: actions/cache@v4
         with:
-          path: ~/.ccache
+          path: bundle
+          key: libslic3r-bundle-v2-${{ hashFiles('core/**', 'scripts/build_deps_ios.sh', 'scripts/ios.toolchain.cmake') }}
+
+      # ccache 只在「内核真的改了」时有用（能复用未改动文件的 .o）
+      # 注意 macOS 上 Homebrew ccache 4.x 的默认目录是 ~/Library/Caches/ccache，
+      # 不是 ~/.ccache —— 之前写错路径，缓存一直是空的。
+      - name: Cache ccache
+        if: steps.libcache.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/ccache
           key: ccache-core-${{ github.sha }}
           restore-keys: ccache-core-
 
       - name: Install ccache
+        if: steps.libcache.outputs.cache-hit != 'true'
         run: brew install ccache
 
       - name: Cache deps
+        if: steps.libcache.outputs.cache-hit != 'true'
         id: depcache
         uses: actions/cache@v4
         with:
@@ -49,12 +66,13 @@ jobs:
           key: iosdeps-all-${{ hashFiles('scripts/build_deps_ios.sh', 'scripts/ios.toolchain.cmake') }}
 
       - name: Build deps
-        if: steps.depcache.outputs.cache-hit != 'true'
+        if: steps.libcache.outputs.cache-hit != 'true' && steps.depcache.outputs.cache-hit != 'true'
         run: |
           set -o pipefail
           bash scripts/build_deps_ios.sh all 2>&1 | tee deps.log
 
       - name: Fetch BambuStudio source
+        if: steps.libcache.outputs.cache-hit != 'true'
         run: |
           curl -L --retry 3 -o bs.tar.gz \
             "https://codeload.github.com/bambulab/BambuStudio/tar.gz/refs/heads/master"
@@ -62,6 +80,7 @@ jobs:
           tar -xzf bs.tar.gz -C vendor --strip-components=1
 
       - name: Build libslic3r
+        if: steps.libcache.outputs.cache-hit != 'true'
         run: |
           set -o pipefail
           cmake -S core -B build-core \
@@ -107,6 +126,7 @@ jobs:
           git push -f origin ci-log || true
 
       - name: Arch assert
+        if: steps.libcache.outputs.cache-hit != 'true'
         run: |
           lipo -info build-core/libslic3r.a | grep -q arm64 \
             || { echo "::error::libslic3r.a 不是 arm64"; exit 1; }
@@ -115,6 +135,7 @@ jobs:
             || { echo "::error::boost 头不全（缺 optional.hpp）"; exit 1; }
 
       - name: Pack bundle
+        if: steps.libcache.outputs.cache-hit != 'true'
         run: |
           # 关键：把 deps 构建出的整个 Frameworks（boost/tbb/eigen/cgal/...）拷进
           # bundle，再补 libslic3r.a。之前只拷了 libslic3r.a，boost 头全丢了。

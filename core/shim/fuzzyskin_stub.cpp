@@ -1,40 +1,48 @@
 //
-//  fuzzyskin_stub.cpp —— 模糊皮肤（Fuzzy Skin）的空实现
+//  fuzzyskin_stub.cpp —— 模糊皮肤（Fuzzy Skin）的降级实现
 //
-//  FuzzySkin.cpp 依赖 libnoise（Perlin 噪声库，Bambu 走外部依赖拉取）。
-//  模糊皮肤是可选的表面处理效果，不影响切片正确性，所以这里顶掉。
+//  FuzzySkin.cpp 依赖 libnoise（Perlin 噪声库，Bambu 走外部依赖拉取，我们没移植）。
+//  模糊皮肤只是可选的表面纹理效果，这里退化成「原样返回」。
 //
-//  为什么不 include FuzzySkin.hpp：那个头可能又拉进 libnoise 的东西，
-//  所以这里只按链接符号里出现的签名手写前置声明，保证 ABI 对得上。
+//  ⚠️ 关键坑（曾经害得 App 崩过一次）：
+//     apply_fuzzy_skin 的返回类型是 Polygon / Arachne::ExtrusionLine，**不是 void**。
+//     C++ 的符号修饰不含返回类型，所以写成 void 也能链接通过，
+//     但调用方会按 Polygon 去读返回值 —— 拿到的是栈上垃圾，
+//     用它构造 std::vector<Point> 后析构时 free 非法指针，运行期报
+//     ___BUG_IN_CLIENT_OF_LIBMALLOC_POINTER_BEING_FREED_WAS_NOT_ALLOCATED。
+//
+//     而且 PerimeterGenerator::traverse_loops 里是**无条件调用**：
+//         const Polygon polygon = apply_fuzzy_skin(loop.polygon, ...);
+//     配置也关不掉。
+//
+//  所以：include 真实的 FuzzySkin.hpp，让签名自动跟头文件一致，
+//  不要再手写签名。
 //
 
-#include <cstddef>
-#include <vector>
+#include "libslic3r/PerimeterGenerator.hpp"
+#include "libslic3r/FuzzySkin.hpp"
+#include "libslic3r/Arachne/utils/ExtrusionLine.hpp"
 
 namespace Slic3r {
 
-class PrintRegionConfig;
-struct Polygon;
-struct PerimeterRegion;
-namespace Arachne { class ExtrusionLine; }
+Polygon apply_fuzzy_skin(const Polygon &polygon,
+                         const PrintRegionConfig & /*base_config*/,
+                         const PerimeterRegions & /*perimeter_regions*/,
+                         size_t /*layer_idx*/,
+                         size_t /*perimeter_idx*/,
+                         bool /*is_contour*/,
+                         coordf_t /*slice_z*/) {
+    return polygon;
+}
 
-// 对应 PerimeterGenerator 里两处调用：
-//   对 Arachne 生成的挤出线做模糊化
-//   对经典 PerimeterGenerator 的 Polygon 做模糊化
-void apply_fuzzy_skin(const Arachne::ExtrusionLine &,
-                      const PrintRegionConfig &,
-                      const std::vector<PerimeterRegion> &,
-                      unsigned long,
-                      unsigned long,
-                      bool,
-                      double) {}
-
-void apply_fuzzy_skin(const Polygon &,
-                      const PrintRegionConfig &,
-                      const std::vector<PerimeterRegion> &,
-                      unsigned long,
-                      unsigned long,
-                      bool,
-                      double) {}
+Arachne::ExtrusionLine apply_fuzzy_skin(const Arachne::ExtrusionLine &extrusion,
+                                        const PrintRegionConfig & /*base_config*/,
+                                        const PerimeterRegions & /*perimeter_regions*/,
+                                        size_t /*layer_idx*/,
+                                        size_t /*perimeter_idx*/,
+                                        bool /*is_contour*/,
+                                        coordf_t /*slice_z*/) {
+    return extrusion;
+}
 
 } // namespace Slic3r
