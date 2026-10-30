@@ -150,15 +150,61 @@ enum SceneBuilder {
     private static func bedNode(settings: SliceSettings) -> SCNNode {
         let w = CGFloat(settings.bedWidth)
         let d = CGFloat(settings.bedDepth)
-        let box = SCNBox(width: w, height: d, length: 1.0, chamferRadius: 0)
-        box.firstMaterial?.diffuse.contents = UIColor(red: 0.16, green: 0.17, blue: 0.19, alpha: 1)
-        box.firstMaterial?.roughness.contents = 0.9
+
+        // 底色比背景亮一档：原来 (0.16,0.17,0.19) 跟背景 (0.055,0.062,0.078)
+        // 太接近，在手机上几乎看不出来，像是没渲染。
+        let box = SCNBox(width: w, height: d, length: 1.0, chamferRadius: 0.8)
+        box.firstMaterial?.diffuse.contents = UIColor(red: 0.20, green: 0.22, blue: 0.26, alpha: 1)
+        box.firstMaterial?.roughness.contents = 0.95
         box.firstMaterial?.lightingModel = .blinn
 
-        let node = SCNNode(geometry: box)
-        node.position = SCNVector3(0, 0, -0.5)   // 顶面正好落在 z = 0（热床面）
-        node.name = "bed"
-        return node
+        let plate = SCNNode(geometry: box)
+        plate.position = SCNVector3(0, 0, -0.5)   // 顶面正好落在 z = 0（热床面）
+        plate.name = "bed"
+
+        // 网格：每 10mm 一条，没有参照物时用户判断不了模型多大
+        plate.addChildNode(gridNode(width: Float(w), depth: Float(d), step: 10, z: 0.5))
+        return plate
+    }
+
+    /// 床面网格线。挂在 bed 节点下，所以 z 用 0.5（bed 顶面在父坐标系 z=0，
+    /// 而 bed 自身中心在 z=-0.5）。
+    private static func gridNode(width: Float, depth: Float, step: Float, z: Float) -> SCNNode {
+        var verts: [Float] = []
+        var idx: [UInt32] = []
+        let hw = width * 0.5, hd = depth * 0.5
+
+        func addLine(_ x0: Float, _ y0: Float, _ x1: Float, _ y1: Float) {
+            let b = UInt32(verts.count / 3)
+            verts.append(contentsOf: [x0, y0, z, x1, y1, z])
+            idx.append(contentsOf: [b, b + 1])
+        }
+
+        var x = -hw
+        while x <= hw + 0.01 { addLine(x, -hd, x, hd); x += step }
+        var y = -hd
+        while y <= hd + 0.01 { addLine(-hw, y, hw, y); y += step }
+
+        let vData = verts.withUnsafeBufferPointer { Data(buffer: $0) }
+        let vSource = SCNGeometrySource(data: vData,
+                                        semantic: .vertex,
+                                        vectorCount: verts.count / 3,
+                                        usesFloatComponents: true,
+                                        componentsPerVector: 3,
+                                        bytesPerComponent: MemoryLayout<Float>.size,
+                                        dataOffset: 0,
+                                        dataStride: MemoryLayout<Float>.size * 3)
+        let iData = idx.withUnsafeBufferPointer { Data(buffer: $0) }
+        let element = SCNGeometryElement(data: iData,
+                                         primitiveType: .line,
+                                         primitiveCount: idx.count / 2,
+                                         bytesPerIndex: MemoryLayout<UInt32>.size)
+        let geo = SCNGeometry(sources: [vSource], elements: [element])
+        let mat = SCNMaterial()
+        mat.lightingModel = .constant
+        mat.diffuse.contents = UIColor(red: 0.34, green: 0.37, blue: 0.42, alpha: 1)
+        geo.materials = [mat]
+        return SCNNode(geometry: geo)
     }
 
     private static func addLights(to parent: SCNNode) {
@@ -180,25 +226,60 @@ enum SceneBuilder {
         parent.addChildNode(fillNode)
     }
 
+    /// 45° 俯视 + 45° 方位角。关键点：
+    ///
+    /// 这里**不能**用 SCNLookAtConstraint。约束会在每帧强行改写相机的
+    /// transform，而 SCNView.allowsCameraControl 的控制器也在改同一个
+    /// transform，两者互相覆盖 —— 表现就是拖不动、或者视角乱跳、
+    /// 严重时相机朝向被算成异常值，整个 3D 视图一片空白。
+    ///
+    /// 正确做法：用 look(at:) 一次性把朝向写好，之后完全交给控制器。
     private static func addCamera(to parent: SCNNode, center: SIMD3<Float>, radius: Float) {
         let camera = SCNCamera()
-        camera.zNear = 1
-        // SCNCamera 的 zNear/zFar 是 Double，而我们的半径是 Float，必须显式转换
-        camera.zFar = Double(radius) * 40
-        camera.fieldOfView = 42
+        // 模型可能只有十几毫米，zNear=1 会把它切掉，必须放小
+        camera.zNear = 0.1
+        camera.zFar = Double(radius) * 60
+        camera.fieldOfView = 40
 
         let node = SCNNode()
         node.name = cameraName
         node.camera = camera
-        node.position = SCNVector3(center.x, center.y - radius * 2.0, center.z + radius * 1.5)
+
+        let dist = radius * 2.6
+        let elev: Float = .pi / 5          // 36° 俯角
+        let azim: Float = .pi / 4          // 45° 方位
+        let pos = SCNVector3(center.x + dist * cos(elev) * sin(azim),
+                             center.y - dist * cos(elev) * cos(azim),
+                             center.z + dist * sin(elev))
+        node.position = pos
         parent.addChildNode(node)
 
-        let target = SCNNode()
-        target.position = SCNVector3(center.x, center.y, center.z)
-        parent.addChildNode(target)
+        let worldTarget = parent.convertPosition(SCNVector3(center.x, center.y, center.z), to: nil)
+        node.look(at: worldTarget, up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, -1))
 
-        let lookAt = SCNLookAtConstraint(target: target)
-        lookAt.isGimbalLockEnabled = true
-        node.constraints = [lookAt]
+        // 记下「家」的位置，供「聚焦模型」一键复位
+        node.userData = [
+            "restPosition": NSValue(scnVector3: pos),
+            "restTarget": NSValue(scnVector3: SCNVector3(center.x, center.y, center.z))
+        ]
+    }
+
+    /// 一键回到模型特写。用户乱转之后按这个键就能回正。
+    static func focusCamera(on view: SCNView) {
+        guard let scene = view.scene,
+              let cam = scene.rootNode.childNode(withName: cameraName, recursively: true),
+              let parent = cam.parent else { return }
+
+        guard let restPos = cam.userData?["restPosition"] as? NSValue,
+              let restTarget = cam.userData?["restTarget"] as? NSValue else { return }
+
+        cam.position = restPos.scnVector3Value
+        let worldTarget = parent.convertPosition(restTarget.scnVector3Value, to: nil)
+        cam.look(at: worldTarget, up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, -1))
+
+        // 让轨道控制器以模型为圆心（不是 220mm 的整张床）
+        view.pointOfView = cam
+        view.defaultCameraController.target = worldTarget
+        view.setNeedsDisplay()
     }
 }

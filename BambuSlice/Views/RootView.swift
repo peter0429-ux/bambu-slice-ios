@@ -6,13 +6,40 @@ struct RootView: View {
 
     @State private var showLibrary = false
     @State private var showSettings = false
+    /// 自增即触发「聚焦到模型」
+    @State private var focusToken = 0
 
     var body: some View {
         ZStack {
             ViewportView(scene: vm.scene,
                          showToolpaths: vm.mode == .toolpath && vm.hasToolpaths,
-                         maxVisibleLayer: vm.maxVisibleLayer)
+                         maxVisibleLayer: vm.maxVisibleLayer,
+                         focusToken: focusToken)
                 .ignoresSafeArea()
+
+            // 聚焦按钮：3D 区域右侧、顶栏下方
+            if vm.hasModel {
+                VStack {
+                    Spacer().frame(height: 58)
+                    HStack {
+                        Spacer()
+                        Button {
+                            focusToken &+= 1
+                        } label: {
+                            Image(systemName: "viewfinder")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.92))
+                                .frame(width: 44, height: 44)
+                                .background(.ultraThinMaterial, in: Circle())
+                                .overlay(Circle().stroke(.white.opacity(0.14), lineWidth: 0.5))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("聚焦到模型")
+                        .padding(.trailing, 16)
+                    }
+                    Spacer()
+                }
+            }
 
             if !vm.hasModel {
                 emptyState
