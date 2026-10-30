@@ -376,6 +376,9 @@ bool slice(const std::string &path,
 
         if (g_cancel.load()) { error = "已取消"; return false; }
         report(0.90f, "生成 G-code");
+        // 注意作用域：export_gcode 需要它来避免上游的空指针写入，
+        // 后面的统计代码也要用它，所以声明在这个 { } 块**外面**。
+        Slic3r::GCodeProcessorResult gcode_result;
         {
             // 统一走 Print::export_gcode()：签名稳定（返回实际写入的路径）。
             // GCode::Generator 的内部 API 在不同 tag 间变过，先不用它。
@@ -392,9 +395,6 @@ bool slice(const std::string &path,
             //        result->support_material_on_wipe_tower = ...;
             //    而它们前面的 `if (result != nullptr) { ... }` 块早已结束。
             //    传 null 就写 0x0+0x1a1 → SIGSEGV（就是 0x1a1 那个崩溃地址）。
-            // 注意作用域：这个 result 后面统计代码还要用，必须声明在这一层，
-            // 不能放进内层 {} 里（放进去出了块就被销毁了）。
-            Slic3r::GCodeProcessorResult gcode_result;
             std::string written = print.export_gcode(tmp, &gcode_result, nullptr);
             if (written.empty()) written = tmp;
 
