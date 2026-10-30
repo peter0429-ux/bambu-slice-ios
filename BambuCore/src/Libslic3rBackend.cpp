@@ -215,7 +215,11 @@ Slic3r::DynamicPrintConfig make_config(const Settings &s, std::vector<std::strin
             warnings.push_back("未知配置项，已忽略: " + kv.first);
             continue;
         }
-        set_str(cfg, kv.first.c_str(), kv.second);
+        // set_str 现在会区分「键不存在」和「值非法」两种情况。
+        // 值非法（比如枚举字符串拼错）以前是静默失败的，
+        // 用户会觉得"这个开关调了没反应"，所以这里也报出来。
+        if (!set_str(cfg, kv.first.c_str(), kv.second))
+            warnings.push_back("配置项值无效，已忽略: " + kv.first + " = " + kv.second);
     }
     return cfg;
 }

@@ -71,6 +71,95 @@ struct SettingsSheet: View {
                     }
                 }
 
+                // ── P1：壳层 / 顶底面 / 接缝 / 补偿 ──────────────
+                Section {
+                    Stepper("顶部壳层：\(settings.topShellLayers) 层",
+                            value: $settings.topShellLayers, in: 0...12)
+                    paramSlider("顶部壳厚",
+                                value: $settings.topShellThickness,
+                                range: 0...3, step: 0.1,
+                                format: "%.1f mm",
+                                hint: "层数与厚度取较大者生效")
+                    Stepper("底部壳层：\(settings.bottomShellLayers) 层",
+                            value: $settings.bottomShellLayers, in: 0...12)
+                    paramSlider("底部壳厚",
+                                value: $settings.bottomShellThickness,
+                                range: 0...3, step: 0.1,
+                                format: "%.1f mm")
+                    Picker("垂直壳厚", selection: $settings.ensureVerticalShellThickness) {
+                        Text("保证（全部斜面）").tag("enabled")
+                        Text("仅关键区域").tag("partial")
+                        Text("关闭").tag("disabled")
+                    }
+                    Toggle("首层单壁", isOn: $settings.onlyOneWallFirstLayer)
+                } header: {
+                    Text("壳层")
+                }
+
+                Section("顶底面图案") {
+                    Picker("顶面", selection: $settings.topSurfacePattern) {
+                        Text("单调线（推荐）").tag("monotonicline")
+                        Text("单调").tag("monotonic")
+                        Text("直线").tag("rectilinear")
+                        Text("同心").tag("concentric")
+                        Text("希尔伯特").tag("hilbertcurve")
+                        Text("锯齿").tag("zig-zag")
+                    }
+                    Picker("底面", selection: $settings.bottomSurfacePattern) {
+                        Text("单调线（推荐）").tag("monotonicline")
+                        Text("单调").tag("monotonic")
+                        Text("直线").tag("rectilinear")
+                        Text("同心").tag("concentric")
+                        Text("希尔伯特").tag("hilbertcurve")
+                        Text("锯齿").tag("zig-zag")
+                    }
+                    Picker("内部实心", selection: $settings.internalSolidInfillPattern) {
+                        Text("单调线（推荐）").tag("monotonicline")
+                        Text("单调").tag("monotonic")
+                        Text("直线").tag("rectilinear")
+                        Text("同心").tag("concentric")
+                        Text("锯齿").tag("zig-zag")
+                    }
+                }
+
+                Section("接缝与顺序") {
+                    Picker("接缝位置", selection: $settings.seamPosition) {
+                        Text("对齐（推荐）").tag("aligned")
+                        Text("最近").tag("nearest")
+                        Text("背面").tag("back")
+                        Text("随机").tag("random")
+                    }
+                    Picker("打壁顺序", selection: $settings.wallSequence) {
+                        Text("内壁 → 外壁").tag("inner wall/outer wall")
+                        Text("外壁 → 内壁").tag("outer wall/inner wall")
+                        Text("内 → 外 → 内").tag("inner-outer-inner wall")
+                    }
+                    Picker("熨烫", selection: $settings.ironingType) {
+                        Text("关闭").tag("no ironing")
+                        Text("顶面").tag("top")
+                        Text("仅最顶层").tag("topmost")
+                        Text("全部实心面").tag("solid")
+                    }
+                }
+
+                Section("尺寸补偿") {
+                    paramSlider("象腿补偿",
+                                value: $settings.elefantFootCompensation,
+                                range: 0...1, step: 0.05,
+                                format: "%.2f mm",
+                                hint: "首层内缩，抵消热床边缘外扩")
+                    paramSlider("XY 孔补偿",
+                                value: $settings.xyHoleCompensation,
+                                range: -0.5...0.5, step: 0.05,
+                                format: "%.2f mm",
+                                hint: "正值缩小孔洞（补偿材料收缩）")
+                    paramSlider("XY 轮廓补偿",
+                                value: $settings.xyContourCompensation,
+                                range: -0.5...0.5, step: 0.05,
+                                format: "%.2f mm",
+                                hint: "正值放大外形")
+                }
+
                 Section("材料") {
                     Stepper("喷嘴温度：\(Int(settings.nozzleTemp))℃",
                             value: $settings.nozzleTemp, in: 180...300, step: 5)

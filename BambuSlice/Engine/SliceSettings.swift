@@ -79,6 +79,39 @@ struct SliceSettings {
 
     var brimEnabled: Bool = false
 
+    // ── P1：壳层 / 顶底面 / 接缝 / 补偿 ─────────────────────
+    // 默认值取自 PrintConfig.cpp 的 set_default_value()，不是猜的。
+    /// 顶部实心壳层数（引擎默认 4）
+    var topShellLayers: Int = 4
+    /// 顶部壳厚 mm（和层数取较大者）
+    var topShellThickness: Double = 0.6
+    /// 底部实心壳层数（引擎默认 3）
+    var bottomShellLayers: Int = 3
+    /// 底部壳厚 mm（0 表示只按层数算）
+    var bottomShellThickness: Double = 0.0
+    /// disabled / partial / enabled
+    var ensureVerticalShellThickness: String = "enabled"
+    /// 顶面图案（InfillPattern）
+    var topSurfacePattern: String = "monotonicline"
+    /// 底面图案
+    var bottomSurfacePattern: String = "monotonicline"
+    /// 内部实心填充图案
+    var internalSolidInfillPattern: String = "monotonicline"
+    /// 首层只打一圈壁
+    var onlyOneWallFirstLayer: Bool = false
+    /// 接缝位置：nearest / aligned / back / random
+    var seamPosition: String = "aligned"
+    /// 熨烫：no ironing / top / topmost / solid
+    var ironingType: String = "no ironing"
+    /// 打壁顺序：inner wall/outer wall | outer wall/inner wall | inner-outer-inner wall
+    var wallSequence: String = "inner wall/outer wall"
+    /// 象腿补偿 mm（首层内缩，抵消热胀）
+    var elefantFootCompensation: Double = 0.0
+    /// XY 孔补偿 mm（正=缩小孔）
+    var xyHoleCompensation: Double = 0.0
+    /// XY 轮廓补偿 mm（正=放大外形）
+    var xyContourCompensation: Double = 0.0
+
     /// 手绘强制支撑的三角形索引（对应 STL 面片序号）。
     /// 用户在 3D 视图里点选的面会被标记为 ENFORCER，切片时引擎强制在该处生成支撑。
     var supportFacets: Set<Int> = []
@@ -143,6 +176,23 @@ struct SliceSettings {
         ov["tree_support_branch_diameter"]  = String(format: "%.2f", treeSupportBranchDiameter)
         ov["tree_support_wall_count"]       = String(treeSupportWallCount)
         s.overrides = ov
+        // P1：壳层 / 顶底面 / 接缝 / 补偿
+        ov["top_shell_layers"]                 = String(topShellLayers)
+        ov["top_shell_thickness"]              = String(format: "%.3f", topShellThickness)
+        ov["bottom_shell_layers"]              = String(bottomShellLayers)
+        ov["bottom_shell_thickness"]           = String(format: "%.3f", bottomShellThickness)
+        ov["ensure_vertical_shell_thickness"]  = ensureVerticalShellThickness
+        ov["top_surface_pattern"]              = topSurfacePattern
+        ov["bottom_surface_pattern"]           = bottomSurfacePattern
+        ov["internal_solid_infill_pattern"]    = internalSolidInfillPattern
+        ov["only_one_wall_first_layer"]        = onlyOneWallFirstLayer ? "1" : "0"
+        ov["seam_position"]                    = seamPosition
+        ov["ironing_type"]                     = ironingType
+        ov["wall_sequence"]                    = wallSequence
+        ov["elefant_foot_compensation"]        = String(format: "%.3f", elefantFootCompensation)
+        ov["xy_hole_compensation"]             = String(format: "%.3f", xyHoleCompensation)
+        ov["xy_contour_compensation"]          = String(format: "%.3f", xyContourCompensation)
+
         s.supportFacets = supportFacets.map { NSNumber(value: $0) }
         return s
     }
