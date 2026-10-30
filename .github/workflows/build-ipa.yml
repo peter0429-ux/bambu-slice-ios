@@ -32,10 +32,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 注意：这里每一条都要能失败而不中断 job。
+      # GitHub Actions 默认是 bash -e，xcrun 在某些 runner 上会尝试
+      # 挂载/下载 SDK 并等待数分钟，一旦失败就直接把 job 打挂。
       - name: 环境信息
         run: |
           echo "架构: $(uname -m)"
-          xcrun --sdk iphonesimulator --show-sdk-version
+          xcodebuild -version || true
+          xcodebuild -showsdks 2>/dev/null | grep -i simulator || true
+          echo "SDK 探测完成（失败不影响后续）"
 
       - name: Cache simulator deps
         id: simdeps
