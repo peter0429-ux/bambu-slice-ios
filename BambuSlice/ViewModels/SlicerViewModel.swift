@@ -62,6 +62,10 @@ final class SlicerViewModel: ObservableObject {
     }
     @Published var errorMessage: String?
 
+    /// 手绘强制支撑的面片索引。每次点模型加一个面片，
+    /// 传给引擎后会在该处强制生成支撑（补自动检测的漏）。
+    @Published var supportFacets: Set<Int> = []
+
     private let engine = BambuCoreEngine()
     private var modelURL: URL?
 
@@ -154,7 +158,8 @@ final class SlicerViewModel: ObservableObject {
     func slice() async {
         guard let url = modelURL, hasModel, !isBusy else { return }
 
-        let snapshot = settings
+        var snapshot = settings
+        snapshot.supportFacets = supportFacets   // 手绘支撑随切片一起下发给引擎
         let base = (fileName as NSString).deletingPathExtension
 
         phase = .busy("切片中")

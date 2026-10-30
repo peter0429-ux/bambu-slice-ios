@@ -36,6 +36,7 @@
 #include <boost/log/core.hpp>
 
 #include "libslic3r/Print.hpp"
+#include "libslic3r/TriangleSelector.hpp"
 #include "libslic3r/GCode/GCodeProcessor.hpp"
 #include "libslic3r/PrintConfig.hpp"
 #include "libslic3r/libslic3r.h"
@@ -323,6 +324,42 @@ bool slice(const std::string &path,
         report(0.10f, "准备配置");
         std::vector<std::string> warnings;
         Slic3r::DynamicPrintConfig cfg = make_config(s, warnings);
+
+        // ── 手绘强制支撑 ────────────────────────────────────
+        // 自动检测漏掉的悬垂，用户在 App 里点选面片标记为 ENFORCER，
+        // 这里写进 ModelVolume::supported_facets，切片时引擎会强制在该处生成支撑。
+        // 面片索引对应 STL 原始三角形序号，不受 place_on_bed 的平移影响。
+        if (!s.support_facets.empty()) {
+            int applied = 0, total = static_cast<int>(s.support_facets.size());
+            try {
+                for (auto *obj : model.objects) {
+                    if (obj == nullptr) continue;
+                    for (auto *vol : obj->volumes) {
+                        if (vol == nullptr) continue;
+                        const int n = static_cast<int>(vol->mesh().its.indices.size());
+                        if (n <= 0) continue;
+                        std::vector<int> valid;
+                        valid.reserve(s.support_facets.size());
+                        for (int idx : s.support_facets)
+                            if (idx >= 0 && idx < n) valid.push_back(idx);
+                        if (valid.empty()) continue;
+
+                        Slic3r::TriangleSelector sel(vol->mesh());
+                        for (int idx : valid)
+                            sel.set_facet(idx, Slic3r::EnforcerBlockerType::ENFORCER);
+                        vol->supported_facets.set(sel);
+                        applied += static_cast<int>(valid.size());
+                    }
+                }
+            } catch (const std::exception &e) {
+                warnings.push_back(std::string("手绘支撑应用失败: ") + e.what());
+            }
+            if (applied > 0)
+                warnings.push_back("已应用手绘支撑 " + std::to_string(applied)
+                                   + " / " + std::to_string(total) + " 个面片");
+            else
+                warnings.push_back("手绘支撑面片全部越界（模型可能已更换），本次忽略");
+        }
 
         // 尺寸自检：STL 单位搞错（m / cm / inch 写成 mm）是"只切出几层、
         // 打印时间只有 1 分钟"的典型原因，先把它排掉。

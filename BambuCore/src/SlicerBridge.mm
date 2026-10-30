@@ -176,6 +176,9 @@ static NSError *makeError(BBSlicerErrorCode code, NSString *message) {
     s.infill_pattern      = toStd(settings.infillPattern);
     s.support_enabled     = settings.supportEnabled ? true : false;
     s.support_threshold   = settings.supportThreshold;
+    for (NSNumber *n in settings.supportFacets) {
+        if (n.intValue >= 0) s.support_facets.push_back(n.intValue);
+    }
     s.brim_enabled        = settings.brimEnabled ? true : false;
     s.nozzle_temp         = settings.nozzleTemp;
     s.bed_temp            = settings.bedTemp;

@@ -49,7 +49,10 @@ struct Settings {
     std::string infill_pattern = "grid"; // grid / gyroid / cubic / rectilinear
 
     bool   support_enabled    = false;
-    double support_threshold  = 45.0;   // 悬垂角阈值（度）
+    double support_threshold  = 30.0;   // 悬垂角阈值（度），桌面版默认 30
+    /// 用户手绘「强制支撑」的面片索引（对应 STL 的三角形序号）。
+    /// 空表示不做手动干预，完全由自动检测决定。
+    std::vector<int> support_facets;
     bool   brim_enabled       = false;
 
     double nozzle_temp        = 220.0;

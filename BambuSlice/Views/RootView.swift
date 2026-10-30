@@ -8,36 +8,97 @@ struct RootView: View {
     @State private var showSettings = false
     /// 自增即触发「聚焦到模型」
     @State private var focusToken = 0
+    /// 手绘支撑模式
+    @State private var paintingSupport = false
 
     var body: some View {
         ZStack {
             ViewportView(scene: vm.scene,
+                         mesh: vm.mesh,
                          showToolpaths: vm.mode == .toolpath && vm.hasToolpaths,
                          maxVisibleLayer: vm.maxVisibleLayer,
-                         focusToken: focusToken)
+                         focusToken: focusToken,
+                         paintingSupport: paintingSupport,
+                         supportFacets: vm.supportFacets,
+                         onPaint: { facet in
+                             vm.supportFacets.insert(facet)
+                         })
                 .ignoresSafeArea()
 
             // 聚焦按钮：3D 区域右侧、顶栏下方
             if vm.hasModel {
                 VStack {
                     Spacer().frame(height: 58)
-                    HStack {
+                    HStack(alignment: .top) {
                         Spacer()
-                        Button {
-                            focusToken &+= 1
-                        } label: {
-                            Image(systemName: "viewfinder")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundStyle(.white.opacity(0.92))
-                                .frame(width: 44, height: 44)
-                                .background(.ultraThinMaterial, in: Circle())
-                                .overlay(Circle().stroke(.white.opacity(0.14), lineWidth: 0.5))
+                        VStack(spacing: 10) {
+                            Button {
+                                focusToken &+= 1
+                            } label: {
+                                Image(systemName: "viewfinder")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundStyle(.white.opacity(0.92))
+                                    .frame(width: 44, height: 44)
+                                    .background(.ultraThinMaterial, in: Circle())
+                                    .overlay(Circle().stroke(.white.opacity(0.14), lineWidth: 0.5))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("聚焦到模型")
+
+                            // 手绘支撑笔刷
+                            Button {
+                                paintingSupport.toggle()
+                            } label: {
+                                Image(systemName: paintingSupport ? "paintbrush.fill" : "paintbrush")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundStyle(paintingSupport ? .white : .white.opacity(0.92))
+                                    .frame(width: 44, height: 44)
+                                    .background {
+                                        if paintingSupport {
+                                            Circle().fill(Color(red: 0.95, green: 0.32, blue: 0.25))
+                                        } else {
+                                            Circle().fill(.ultraThinMaterial)
+                                        }
+                                    }
+                                    .overlay(Circle().stroke(.white.opacity(0.14), lineWidth: 0.5))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("手绘支撑")
+
+                            if !vm.supportFacets.isEmpty {
+                                Button {
+                                    vm.supportFacets.removeAll()
+                                } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundStyle(.white.opacity(0.8))
+                                        .frame(width: 30, height: 30)
+                                        .background(.ultraThinMaterial, in: Circle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("清除手绘支撑")
+                            }
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("聚焦到模型")
                         .padding(.trailing, 16)
                     }
                     Spacer()
+                }
+
+                // 笔刷模式的提示条
+                if paintingSupport {
+                    VStack {
+                        Spacer()
+                        Text(vm.supportFacets.isEmpty
+                             ? "点模型表面标记强制支撑区域"
+                             : "已标记 \(vm.supportFacets.count) 个面片 · 再点笔刷退出")
+                            .font(.footnote.weight(.medium))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .padding(.bottom, 360)
+                        Spacer()
+                    }
+                    .allowsHitTesting(false)
                 }
             }
 

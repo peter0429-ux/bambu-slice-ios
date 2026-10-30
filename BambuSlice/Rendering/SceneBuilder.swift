@@ -345,4 +345,62 @@ enum SceneBuilder {
         view.setNeedsDisplay()
     }
 
+
+    static let supportHighlightName = "supportHighlight"
+
+    /// 把用户点选的面片画成半透明红色覆盖层。
+    /// 每次点选都会重建这个节点（几百个三角形，开销可以忽略）。
+    static func updateSupportHighlight(scene: SCNScene, mesh: Mesh, facets: Set<Int>) {
+        guard let container = scene.rootNode.childNode(withName: "container", recursively: false) else { return }
+        container.childNode(withName: supportHighlightName, recursively: false)?.removeFromParentNode()
+        guard !facets.isEmpty else { return }
+
+        let idxArr = mesh.indices
+        var verts: [Float] = []
+        verts.reserveCapacity(facets.count * 9)
+        for f in facets {
+            let base = f * 3
+            guard base + 2 < idxArr.count else { continue }
+            for k in 0..<3 {
+                let vi = Int(idxArr[base + k])
+                guard vi < mesh.positions.count else { continue }
+                let p = mesh.positions[vi]
+                verts.append(p.x); verts.append(p.y); verts.append(p.z)
+            }
+        }
+        guard verts.count >= 9 else { return }
+
+        let vData = verts.withUnsafeBufferPointer { Data(buffer: $0) }
+        let vSource = SCNGeometrySource(data: vData,
+                                        semantic: .vertex,
+                                        vectorCount: verts.count / 3,
+                                        usesFloatComponents: true,
+                                        componentsPerVector: 3,
+                                        bytesPerComponent: MemoryLayout<Float>.size,
+                                        dataOffset: 0,
+                                        dataStride: MemoryLayout<Float>.size * 3)
+        let indices: [UInt32] = (0..<UInt32(verts.count / 3)).map { $0 }
+        let iData = indices.withUnsafeBufferPointer { Data(buffer: $0) }
+        let element = SCNGeometryElement(data: iData,
+                                         primitiveType: .triangles,
+                                         primitiveCount: indices.count / 3,
+                                         bytesPerIndex: MemoryLayout<UInt32>.size)
+        let geo = SCNGeometry(sources: [vSource], elements: [element])
+        let mat = SCNMaterial()
+        mat.lightingModel = .constant
+        mat.diffuse.contents = UIColor(red: 1.0, green: 0.25, blue: 0.30, alpha: 0.75)
+        mat.isDoubleSided = true
+        // 稍微抬起一点，避免和模型面 z-fighting
+        mat.writesToDepthBuffer = false
+        geo.materials = [mat]
+
+        let node = SCNNode(geometry: geo)
+        node.name = supportHighlightName
+        node.renderingOrder = 10
+        // 跟模型用同一个平移（模型居中到床面）
+        if let model = container.childNode(withName: modelName, recursively: true) {
+            node.position = model.position
+        }
+        container.addChildNode(node)
+    }
 }

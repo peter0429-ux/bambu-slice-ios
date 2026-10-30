@@ -42,6 +42,8 @@ typedef struct BBAABB {
 @property (nonatomic, copy) NSString *infillPattern;
 @property (nonatomic) BOOL supportEnabled;
 @property (nonatomic) double supportThreshold;
+/// 手绘强制支撑：STL 三角形索引。空数组表示不干预。
+@property (nonatomic, copy) NSArray<NSNumber *> *supportFacets;
 @property (nonatomic) BOOL brimEnabled;
 @property (nonatomic) double nozzleTemp;
 @property (nonatomic) double bedTemp;

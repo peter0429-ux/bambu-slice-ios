@@ -78,6 +78,10 @@ struct SliceSettings {
     var treeSupportWallCount: Int = 1
 
     var brimEnabled: Bool = false
+
+    /// 手绘强制支撑的三角形索引（对应 STL 面片序号）。
+    /// 用户在 3D 视图里点选的面会被标记为 ENFORCER，切片时引擎强制在该处生成支撑。
+    var supportFacets: Set<Int> = []
     var nozzleTemp: Double = 220
     var bedTemp: Double = 60
     var printer: PrinterPreset = PrinterPreset.all[0]
@@ -139,6 +143,7 @@ struct SliceSettings {
         ov["tree_support_branch_diameter"]  = String(format: "%.2f", treeSupportBranchDiameter)
         ov["tree_support_wall_count"]       = String(treeSupportWallCount)
         s.overrides = ov
+        s.supportFacets = supportFacets.map { NSNumber(value: $0) }
         return s
     }
 }
