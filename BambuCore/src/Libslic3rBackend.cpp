@@ -392,11 +392,10 @@ bool slice(const std::string &path,
             //        result->support_material_on_wipe_tower = ...;
             //    而它们前面的 `if (result != nullptr) { ... }` 块早已结束。
             //    传 null 就写 0x0+0x1a1 → SIGSEGV（就是 0x1a1 那个崩溃地址）。
-            std::string written;
-            {
-                Slic3r::GCodeProcessorResult gcode_result;
-                written = print.export_gcode(tmp, &gcode_result, nullptr);
-            }
+            // 注意作用域：这个 result 后面统计代码还要用，必须声明在这一层，
+            // 不能放进内层 {} 里（放进去出了块就被销毁了）。
+            Slic3r::GCodeProcessorResult gcode_result;
+            std::string written = print.export_gcode(tmp, &gcode_result, nullptr);
             if (written.empty()) written = tmp;
 
             std::ifstream in(written, std::ios::binary);
@@ -423,21 +422,24 @@ bool slice(const std::string &path,
         out.filament_mm = 0.0;
         out.filament_grams = 0.0;
         {
-            const auto &ps = gcode_result.print_statistics;
-            using TimeMode = Slic3r::GCodeProcessorResult::PrintEstimatedStatistics::ETimeMode;
-            const auto &normal = ps.modes[static_cast<size_t>(TimeMode::Normal)];
-            out.duration_seconds = normal.time;              // 秒
+            // modes[0] 就是 ETimeMode::Normal（枚举定义里 Normal 排第一）。
+            // 不用写 ETimeMode 的完整限定名 —— 那个嵌套路径在 clang 里解析不了。
+            const auto &ps     = gcode_result.print_statistics;
+            const auto &normal = ps.modes[0];
+            out.duration_seconds = normal.time;                  // 秒
             out.layer_count      = normal.layers_times.size();
 
             double grams = 0.0, length_mm = 0.0;
             for (const auto &kv : ps.total_volumes_per_extruder) {
-                const size_t idx = kv.first;
-                const double volume_mm3 = kv.second;
-                const double density = (idx < ps.filament_densities.size())
-                                     ? ps.filament_densities[idx] : 1.24;   // g/cm3
+                const size_t idx         = kv.first;
+                const double volume_mm3  = kv.second;
+                // filament_densities / filament_diameters 是 GCodeProcessorResult
+                // 的成员（不在 print_statistics 里）
+                const double density = (idx < gcode_result.filament_densities.size())
+                                     ? gcode_result.filament_densities[idx] : 1.24;   // g/cm3
                 grams += volume_mm3 * density / 1000.0;
-                const double fil_d = (idx < ps.filament_diameters.size())
-                                   ? ps.filament_diameters[idx] : 1.75;      // mm
+                const double fil_d = (idx < gcode_result.filament_diameters.size())
+                                   ? gcode_result.filament_diameters[idx] : 1.75;      // mm
                 const double area = 3.14159265358979323846 * (fil_d * 0.5) * (fil_d * 0.5);
                 if (area > 0.0) length_mm += volume_mm3 / area;
             }
