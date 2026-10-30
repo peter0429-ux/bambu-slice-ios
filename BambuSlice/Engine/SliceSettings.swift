@@ -133,7 +133,7 @@ struct SliceSettings {
         ov["support_interface_top_layers"]  = String(supportInterfaceTopLayers)
         ov["support_interface_spacing"]     = String(format: "%.3f", supportInterfaceSpacing)
         ov["support_expansion"]             = String(format: "%.3f", supportExpansion)
-        ov["support_buildplate_only"]       = supportBuildplateOnly ? "1" : "0"
+        ov["support_on_build_plate_only"]   = supportBuildplateOnly ? "1" : "0"
         ov["support_remove_small_overhang"] = supportRemoveSmallOverhang ? "1" : "0"
         ov["tree_support_branch_angle"]     = String(format: "%.1f", treeSupportBranchAngle)
         ov["tree_support_branch_diameter"]  = String(format: "%.2f", treeSupportBranchDiameter)

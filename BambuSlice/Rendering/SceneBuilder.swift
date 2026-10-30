@@ -57,8 +57,9 @@ enum SceneBuilder {
         if !layers.isEmpty {
             let root = SCNNode()
             root.name = toolpathName
+            let lineWidth = Float(settings.nozzleDiameter)
             for (i, layer) in layers.enumerated() {
-                guard let n = toolpathNode(layer: layer, index: i) else { continue }
+                guard let n = toolpathNode(layer: layer, index: i, lineWidth: lineWidth) else { continue }
                 root.addChildNode(n)
             }
             container.addChildNode(root)
@@ -105,23 +106,50 @@ enum SceneBuilder {
         return SCNNode(geometry: geometry)
     }
 
-    private static func toolpathNode(layer: ToolpathLayer, index: Int) -> SCNNode? {
+    /// 把一层路径画成**有宽度**的带状。
+    ///
+    /// 之前用 SCNGeometryElement.primitiveType = .line 渲染，线宽恒为 1 像素，
+    /// 看上去是「细线」，完全体现不出真实挤出宽度（0.4mm 左右），
+    /// 也没法判断填充密度和壁厚是否合理。
+    ///
+    /// 现在每条线段扩成一个矩形（2 个三角形），宽度 = 喷嘴直径。
+    private static func toolpathNode(layer: ToolpathLayer, index: Int,
+                                     lineWidth: Float) -> SCNNode? {
         guard !layer.segments.isEmpty else { return nil }
+
+        let halfW = max(lineWidth, 0.05) * 0.5
 
         var vertices = [Float]()
         var colors = [Float]()
         var indices = [UInt32]()
-        vertices.reserveCapacity(layer.segments.count * 6)
-        colors.reserveCapacity(layer.segments.count * 8)
-        indices.reserveCapacity(layer.segments.count * 2)
+        // 每条线段 4 顶点 / 6 索引
+        vertices.reserveCapacity(layer.segments.count * 12)
+        colors.reserveCapacity(layer.segments.count * 16)
+        indices.reserveCapacity(layer.segments.count * 6)
 
+        let up = SIMD3<Float>(0, 0, 1)   // 同层路径共面，Z 一定不与走向平行
         for seg in layer.segments {
+            let d = seg.b - seg.a
+            let len = simd_length(d)
+            guard len > 1e-6 else { continue }
+            let dir = d / len
+            var perp = simd_cross(dir, up)
+            let plen = simd_length(perp)
+            guard plen > 1e-6 else { continue }
+            perp = (perp / plen) * halfW
+
+            let a0 = seg.a - perp, a1 = seg.a + perp
+            let b0 = seg.b - perp, b1 = seg.b + perp
+
             let (r, g, b) = seg.feature.rgb
-            for p in [seg.a, seg.b] {
-                indices.append(UInt32(vertices.count / 3))
+            let base = UInt32(vertices.count / 3)
+            for p in [a0, a1, b1, b0] {
                 vertices.append(p.x); vertices.append(p.y); vertices.append(p.z)
                 colors.append(r); colors.append(g); colors.append(b); colors.append(1)
             }
+            // 两个三角形拼成矩形
+            indices.append(contentsOf: [base, base + 1, base + 2,
+                                        base, base + 2, base + 3])
         }
 
         let vData = vertices.withUnsafeBufferPointer { Data(buffer: $0) }
@@ -146,8 +174,8 @@ enum SceneBuilder {
 
         let iData = indices.withUnsafeBufferPointer { Data(buffer: $0) }
         let element = SCNGeometryElement(data: iData,
-                                         primitiveType: .line,
-                                         primitiveCount: layer.segments.count,
+                                         primitiveType: .triangles,
+                                         primitiveCount: indices.count / 3,
                                          bytesPerIndex: MemoryLayout<UInt32>.size)
 
         let geometry = SCNGeometry(sources: [vSource, cSource], elements: [element])
@@ -175,7 +203,9 @@ enum SceneBuilder {
         box.firstMaterial?.lightingModel = .blinn
 
         let plate = SCNNode(geometry: box)
-        plate.position = SCNVector3(0, 0, -0.5)   // 顶面正好落在 z = 0（热床面）
+        // 打印机坐标系里热床是从 (0,0) 到 (w,d)，中心在 (w/2, d/2)。
+        // 模型也被摆到这个中心，所以板子必须跟着移过来，否则模型会跑到板外。
+        plate.position = SCNVector3(Float(w) * 0.5, Float(d) * 0.5, -0.5)
         plate.name = "bed"
 
         // 网格：每 10mm 一条，没有参照物时用户判断不了模型多大
