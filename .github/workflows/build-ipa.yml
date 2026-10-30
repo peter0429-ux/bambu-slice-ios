@@ -21,6 +21,91 @@ on:
   pull_request:
 
 jobs:
+  # ─────────────────────────────────────────────────────────────
+  # 模拟器版依赖 + libslic3r（给 XCTest 用）
+  #
+  # 模拟器目标 arm64-apple-ios-simulator 与真机 arm64-apple-ios 不是同一 ABI，
+  # 静态库不能混用，所以依赖和 libslic3r 都要单独编一份到 Frameworks-sim/。
+  # ─────────────────────────────────────────────────────────────
+  core-sim:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 环境信息
+        run: |
+          echo "架构: $(uname -m)"
+          xcrun --sdk iphonesimulator --show-sdk-version
+
+      - name: Cache simulator deps
+        id: simdeps
+        uses: actions/cache@v4
+        with:
+          path: Frameworks-sim
+          key: simdeps-v1-${{ hashFiles('scripts/build_deps_ios.sh', 'scripts/ios.toolchain.cmake') }}
+
+      - name: Build simulator deps
+        if: steps.simdeps.outputs.cache-hit != 'true'
+        run: |
+          set -o pipefail
+          PLATFORM=simulator bash scripts/build_deps_ios.sh all 2>&1 | tee simdeps.log
+
+      - name: 依赖失败日志
+        if: failure()
+        run: |
+          echo "=== error ==="
+          grep -nE "error:|Error [0-9]|cannot find|undefined symbol|No such file" simdeps.log | awk '!seen[$0]++' | head -40 || true
+          echo "=== tail ==="
+          tail -30 simdeps.log || true
+
+      - name: Cache simulator libslic3r
+        id: simlib
+        uses: actions/cache@v4
+        with:
+          path: |
+            build-core-sim
+            bundle-sim
+          key: libslic3r-sim-v1-${{ hashFiles('core/**', 'scripts/build_deps_ios.sh', 'scripts/ios.toolchain.cmake') }}
+
+      - name: Fetch BambuStudio source
+        if: steps.simlib.outputs.cache-hit != 'true'
+        run: |
+          curl -L --retry 3 -o bs.tar.gz "https://codeload.github.com/bambulab/BambuStudio/tar.gz/refs/heads/master"
+          mkdir -p vendor
+          tar -xzf bs.tar.gz -C vendor --strip-components=1
+
+      - name: Build libslic3r (simulator)
+        if: steps.simlib.outputs.cache-hit != 'true'
+        run: |
+          set -o pipefail
+          cmake -S core -B build-core-sim -DCMAKE_TOOLCHAIN_FILE="$PWD/scripts/ios.toolchain.cmake" -DPLATFORM=simulator -DCMAKE_BUILD_TYPE=Release -DBAMBU_SRC="$PWD/vendor" 2>&1 | tee core-sim-cfg.log
+          cmake --build build-core-sim -j"$(sysctl -n hw.ncpu)" -- -k 2>&1 | tee core-sim-build.log
+
+      - name: 内核失败日志
+        if: failure()
+        run: |
+          for f in core-sim-cfg.log core-sim-build.log; do
+            [ -f "$f" ] || continue
+            echo "=== $f ==="
+            grep -nE "error:|CMake Error|fatal error" "$f" | awk '!seen[$0]++' | head -40 || true
+          done
+
+      - name: Pack simulator bundle
+        if: steps.simlib.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p bundle-sim
+          cp Frameworks-sim/libslic3r/lib/libslic3r.a bundle-sim/
+          tar -czf bundle-sim/frameworks-sim.tgz -C Frameworks-sim .
+          ls -lh bundle-sim/
+
+      - name: Upload simulator bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-bundle-sim
+          path: bundle-sim
+          if-no-files-found: error
+
   # ── 先编 libslic3r（deps 有缓存，命中时秒过）──────────────
   # .a 几十 MB 不进 git，用 artifact 在同一次 run 里传给 build job
   core:

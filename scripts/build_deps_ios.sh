@@ -14,11 +14,28 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-FW="${ROOT}/Frameworks"
-WORK="${ROOT}/vendor"
 DEPLOYMENT_TARGET="${DEPLOYMENT_TARGET:-16.0}"
-SYSROOT="$(xcrun --sdk iphoneos --show-sdk-path)"
 JOBS="$(sysctl -n hw.ncpu)"
+
+# 平台：device（默认，出 ipa）或 simulator（跑 XCTest）
+# 模拟器目标是 arm64-apple-ios-simulator，ABI 跟真机不同，必须单独编一份。
+PLATFORM="${PLATFORM:-device}"
+if [ "${PLATFORM}" = "simulator" ]; then
+  SDK_NAME=iphonesimulator
+  FW="${ROOT}/Frameworks-sim"
+  MVER_FLAG="-mios-simulator-version-min=${DEPLOYMENT_TARGET}"
+  # Apple Silicon 的模拟器是 arm64；Intel Mac 上 x86_64
+  if [ "$(uname -m)" = "arm64" ]; then SIM_ARCH=arm64; else SIM_ARCH=x86_64; fi
+  TARGET_TRIPLE="${SIM_ARCH}-apple-ios${DEPLOYMENT_TARGET}-simulator"
+else
+  SDK_NAME=iphoneos
+  FW="${ROOT}/Frameworks"
+  MVER_FLAG="-miphoneos-version-min=${DEPLOYMENT_TARGET}"
+  TARGET_TRIPLE="arm64-apple-ios${DEPLOYMENT_TARGET}"
+fi
+SYSROOT="$(xcrun --sdk ${SDK_NAME} --show-sdk-path)"
+ARCH="${SIM_ARCH:-arm64}"
+printf "\n\033[1;33m==> 平台=%s  SDK=%s  架构=%s  产物=%s\033[0m\n" "${PLATFORM}" "${SDK_NAME}" "${ARCH}" "${FW}"
 
 # 默认版本仅作示例，请改成 Bambu Studio 里锁定的版本
 BOOST_VERSION="${BOOST_VERSION:-1.83.0}"
@@ -65,6 +82,7 @@ build_zlib() {
   # 然后卡在「requires a development team」上。Makefile 生成器没这问题。
   cmake -S "${WORK}/zlib" -B "${WORK}/zlib/build-ios" \
         -DCMAKE_TOOLCHAIN_FILE="${ROOT}/scripts/ios.toolchain.cmake" \
+        -DPLATFORM="${PLATFORM}" \
         -DCMAKE_OSX_DEPLOYMENT_TARGET="${DEPLOYMENT_TARGET}" \
         -DCMAKE_BUILD_TYPE=Release \
         -DBUILD_SHARED_LIBS=OFF
@@ -95,6 +113,7 @@ build_png() {
 
   cmake -S "${WORK}/png" -B "${WORK}/png/build-ios" \
         -DCMAKE_TOOLCHAIN_FILE="${ROOT}/scripts/ios.toolchain.cmake" \
+        -DPLATFORM="${PLATFORM}" \
         -DCMAKE_OSX_DEPLOYMENT_TARGET="${DEPLOYMENT_TARGET}" \
         -DCMAKE_INSTALL_PREFIX="${FW}/png" \
         -DCMAKE_BUILD_TYPE=Release \
@@ -113,6 +132,7 @@ build_expat() {
   fetch "https://github.com/libexpat/libexpat/releases/download/R_${EXPAT_VERSION//./_}/expat-${EXPAT_VERSION}.tar.gz" "${WORK}/expat"
   cmake -S "${WORK}/expat" -B "${WORK}/expat/build-ios" -G Xcode \
         -DCMAKE_TOOLCHAIN_FILE="${ROOT}/scripts/ios.toolchain.cmake" \
+        -DPLATFORM="${PLATFORM}" \
         -DCMAKE_INSTALL_PREFIX="${FW}/expat" \
         -DCMAKE_OSX_DEPLOYMENT_TARGET="${DEPLOYMENT_TARGET}" \
         -DEXPAT_SHARED_LIBS=OFF \
@@ -133,6 +153,7 @@ build_tbb() {
   # 用 CMAKE_POLICY_VERSION_MINIMUM 把兼容性下限放回去。
   cmake -S "${WORK}/tbb" -B "${WORK}/tbb/build-ios" \
         -DCMAKE_TOOLCHAIN_FILE="${ROOT}/scripts/ios.toolchain.cmake" \
+        -DPLATFORM="${PLATFORM}" \
         -DCMAKE_INSTALL_PREFIX="${FW}/tbb" \
         -DCMAKE_OSX_DEPLOYMENT_TARGET="${DEPLOYMENT_TARGET}" \
         -DCMAKE_BUILD_TYPE=Release \
@@ -158,9 +179,9 @@ build_boost() {
   # 单独写一份 user-config，避免在命令行里塞带引号的多行参数
   cat > "${WORK}/ios-user-config.jam" <<EOF
 using clang : ios
-: xcrun -sdk iphoneos clang++
-: <compileflags>"-arch arm64 -miphoneos-version-min=${DEPLOYMENT_TARGET} -isysroot ${SYSROOT} -std=c++17 -fPIC"
-  <linkflags>"-arch arm64 -miphoneos-version-min=${DEPLOYMENT_TARGET} -isysroot ${SYSROOT}"
+: xcrun -sdk ${SDK_NAME} clang++
+: <compileflags>"-arch ${ARCH} ${MVER_FLAG} -isysroot ${SYSROOT} -std=c++17 -fPIC"
+  <linkflags>"-arch ${ARCH} ${MVER_FLAG} -isysroot ${SYSROOT}"
 ;
 EOF
 
