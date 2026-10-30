@@ -43,6 +43,40 @@ struct SliceSettings {
     var infillDensity: Double = 0.15
     var infillPattern: String = "grid"
     var supportEnabled: Bool = false
+
+    // ── 支撑参数（对应 Bambu Studio 支撑面板）──────────────────
+    // 注意：Bambu 分支里没有 PrusaSlicer 的 support_material / support_material_threshold，
+    // 它的键是 enable_support / support_threshold_angle，用旧名会静默失效。
+    /// 悬垂角阈值（°）：坡度低于这个值的悬垂才加支撑。桌面版默认 30，
+    /// 调大→支撑变少，调小→支撑变多。
+    var supportThreshold: Double = 30
+    /// normal(auto) / tree(auto) / normal / tree
+    var supportType: String = "normal(auto)"
+    /// 支撑顶面与模型的间隙 mm
+    var supportTopZDistance: Double = 0.20
+    /// 支撑底面与模型的间隙 mm
+    var supportBottomZDistance: Double = 0.20
+    /// 支撑与模型的水平距离 mm
+    var supportObjectXYDistance: Double = 0.35
+    /// 支撑底部图案间距 mm（越小越密实）
+    var supportBasePatternSpacing: Double = 2.5
+    /// 支撑接触面层数
+    var supportInterfaceTopLayers: Int = 2
+    /// 接触面线距 mm
+    var supportInterfaceSpacing: Double = 0.5
+    /// 支撑水平外扩 mm（正值让支撑更宽，更容易挂住悬垂）
+    var supportExpansion: Double = 0.0
+    /// 只在热床上生成支撑（模型内部不放）
+    var supportBuildplateOnly: Bool = false
+    /// 过滤掉太小的悬垂区域
+    var supportRemoveSmallOverhang: Bool = true
+    /// 树状支撑分枝角（°）
+    var treeSupportBranchAngle: Double = 30
+    /// 树状支撑主干直径 mm
+    var treeSupportBranchDiameter: Double = 2.0
+    /// 树状支撑壁数
+    var treeSupportWallCount: Int = 1
+
     var brimEnabled: Bool = false
     var nozzleTemp: Double = 220
     var bedTemp: Double = 60
@@ -78,6 +112,7 @@ struct SliceSettings {
         s.infillDensity = infillDensity
         s.infillPattern = infillPattern
         s.supportEnabled = supportEnabled
+        s.supportThreshold = supportThreshold
         s.brimEnabled = brimEnabled
         s.nozzleTemp = nozzleTemp
         s.bedTemp = bedTemp
@@ -85,6 +120,25 @@ struct SliceSettings {
         s.bedWidth = printer.bedWidth
         s.bedDepth = printer.bedDepth
         s.bedHeight = printer.bedHeight
+
+        // 支撑细节参数全部走 overrides 直通。
+        // 这些键在 Bambu 分支里都存在（已对着 PrintConfig.hpp 核对过），
+        // 传错键名也不会崩：libslic3r 那边会跳过不认识的键。
+        var ov = (s.overrides as? [String: String]) ?? [:]
+        ov["support_type"]                  = supportType
+        ov["support_top_z_distance"]        = String(format: "%.3f", supportTopZDistance)
+        ov["support_bottom_z_distance"]     = String(format: "%.3f", supportBottomZDistance)
+        ov["support_object_xy_distance"]    = String(format: "%.3f", supportObjectXYDistance)
+        ov["support_base_pattern_spacing"]  = String(format: "%.3f", supportBasePatternSpacing)
+        ov["support_interface_top_layers"]  = String(supportInterfaceTopLayers)
+        ov["support_interface_spacing"]     = String(format: "%.3f", supportInterfaceSpacing)
+        ov["support_expansion"]             = String(format: "%.3f", supportExpansion)
+        ov["support_buildplate_only"]       = supportBuildplateOnly ? "1" : "0"
+        ov["support_remove_small_overhang"] = supportRemoveSmallOverhang ? "1" : "0"
+        ov["tree_support_branch_angle"]     = String(format: "%.1f", treeSupportBranchAngle)
+        ov["tree_support_branch_diameter"]  = String(format: "%.2f", treeSupportBranchDiameter)
+        ov["tree_support_wall_count"]       = String(treeSupportWallCount)
+        s.overrides = ov
         return s
     }
 }

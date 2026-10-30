@@ -84,6 +84,81 @@ struct SettingsSheet: View {
                     Toggle("Brim", isOn: $settings.brimEnabled)
                 }
 
+                // ── 支撑参数（对应 Bambu Studio 桌面版支撑面板）──
+                // 关键项是「悬垂角阈值」：桌面版默认 30°，之前这里错用了 45°，
+                // 结果只给大于 45° 的悬垂加支撑，看起来就是"支撑不够"。
+                if settings.supportEnabled {
+                    Section {
+                        Picker("支撑类型", selection: $settings.supportType) {
+                            Text("普通（自动）").tag("normal(auto)")
+                            Text("树状（自动）").tag("tree(auto)")
+                            Text("普通（手动）").tag("normal")
+                            Text("树状（手动）").tag("tree")
+                        }
+
+                        paramSlider("悬垂角阈值",
+                                    value: $settings.supportThreshold,
+                                    range: 10...70, step: 1,
+                                    format: "%.0f°",
+                                    hint: "坡度低于该值的悬垂才生成支撑。调小 → 支撑更多")
+
+                        Stepper("接触面层数：\(settings.supportInterfaceTopLayers)",
+                                value: $settings.supportInterfaceTopLayers, in: 0...6)
+
+                        Toggle("只在热床上生成", isOn: $settings.supportBuildplateOnly)
+                        Toggle("过滤小块悬垂", isOn: $settings.supportRemoveSmallOverhang)
+                    } header: {
+                        Text("支撑")
+                    }
+
+                    Section {
+                        paramSlider("顶面间隙",
+                                    value: $settings.supportTopZDistance,
+                                    range: 0...0.6, step: 0.02,
+                                    format: "%.2f mm",
+                                    hint: "支撑顶面离模型的缝，太小会粘牢撕坏表面")
+                        paramSlider("底面间隙",
+                                    value: $settings.supportBottomZDistance,
+                                    range: 0...0.6, step: 0.02,
+                                    format: "%.2f mm")
+                        paramSlider("与模型水平距离",
+                                    value: $settings.supportObjectXYDistance,
+                                    range: 0...2, step: 0.05,
+                                    format: "%.2f mm")
+                        paramSlider("水平外扩",
+                                    value: $settings.supportExpansion,
+                                    range: 0...2, step: 0.1,
+                                    format: "%.2f mm",
+                                    hint: "调大让支撑更宽，更容易托住边缘悬垂")
+                        paramSlider("底部图案间距",
+                                    value: $settings.supportBasePatternSpacing,
+                                    range: 0.5...10, step: 0.5,
+                                    format: "%.1f mm",
+                                    hint: "调小 → 支撑更密实，也更费料")
+                        paramSlider("接触面线距",
+                                    value: $settings.supportInterfaceSpacing,
+                                    range: 0...2, step: 0.1,
+                                    format: "%.2f mm")
+                    } header: {
+                        Text("支撑细节")
+                    }
+
+                    if settings.supportType.hasPrefix("tree") {
+                        Section("树状支撑") {
+                            paramSlider("分枝角",
+                                        value: $settings.treeSupportBranchAngle,
+                                        range: 10...80, step: 1,
+                                        format: "%.0f°")
+                            paramSlider("主干直径",
+                                        value: $settings.treeSupportBranchDiameter,
+                                        range: 0.5...10, step: 0.5,
+                                        format: "%.1f mm")
+                            Stepper("壁数：\(settings.treeSupportWallCount)",
+                                    value: $settings.treeSupportWallCount, in: 0...4)
+                        }
+                    }
+                }
+
                 Section {
                     LabeledContent("内核", value: BambuCoreEngine.coreVersion)
                     if !BambuCoreEngine.isCoreAvailable {
@@ -104,4 +179,28 @@ struct SettingsSheet: View {
             }
         }
     }
+
+    /// 统一风格的参数滑条：标题 + 当前值 + 滑杆 + 可选说明。
+    @ViewBuilder
+    private func paramSlider(_ title: String,
+                             value: Binding<Double>,
+                             range: ClosedRange<Double>,
+                             step: Double,
+                             format: String,
+                             hint: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(String(format: format, value.wrappedValue))
+                    .font(.system(.subheadline, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+            Slider(value: value, in: range, step: step)
+            if let hint {
+                Text(hint)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
 }

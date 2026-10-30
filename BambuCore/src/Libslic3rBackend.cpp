@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -192,7 +193,11 @@ Slic3r::DynamicPrintConfig make_config(const Settings &s, std::vector<std::strin
     // 不是 PrusaSlicer 的 support_material / support_material_threshold。
     // 用旧键名会静默失效（cfg.has() 返回 false，setter 直接跳过）。
     set_bool(cfg, "enable_support", s.support_enabled);
-    set_double(cfg, "support_threshold_angle", s.support_threshold);
+    // support_threshold_angle 是 coInt（1..90），必须用整数。
+    // 用 set_double 会输出 "30.5" 之类，int 反序列化失败后被静默跳过，
+    // 表现就是「角度怎么调都没反应」。
+    set_int(cfg, "support_threshold_angle",
+            static_cast<int>(std::lround(s.support_threshold)));
     set_str(cfg, "support_type", "normal(auto)");
     set_str(cfg, "support_style", "default");
     set_double(cfg, "support_top_z_distance", 0.2);

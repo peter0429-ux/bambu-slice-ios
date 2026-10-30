@@ -26,7 +26,12 @@ enum SceneBuilder {
         let boundsMin = mesh?.boundsMin ?? SIMD3(0, 0, 0)
         let boundsMax = mesh?.boundsMax ?? SIMD3(Float(settings.bedWidth),
                                                  Float(settings.bedDepth), 0)
-        let center = (boundsMin + boundsMax) * 0.5
+        // 模型会被平移到底板中心（见下面 meshNode 的 offset），
+        // 所以取景中心也必须用平移后的位置，不能用 STL 原始包围盒中心。
+        let modelHeight = boundsMax.z - boundsMin.z
+        let center = SIMD3<Float>(Float(settings.bedWidth) * 0.5,
+                                  Float(settings.bedDepth) * 0.5,
+                                  modelHeight * 0.5)
 
         container.addChildNode(bedNode(settings: settings))
         addLights(to: container)
@@ -35,6 +40,17 @@ enum SceneBuilder {
         if let mesh {
             let node = meshNode(mesh: mesh)
             node.name = modelName
+
+            // ⚠️ 预览里的模型位置必须和 libslic3r 实际切片时的位置一致。
+            //    切片那边会做 place_on_bed()：XY 平移到热床中心、Z 让最低点落到 0。
+            //    但 Swift 手上的 mesh 是 STL 的原始坐标（可能在任意位置、悬空），
+            //    不补这个平移就会出现「预览里模型飘在半空、偏在一边，
+            //    而切片结果却在板子正中」的错位。
+            let offsetX = Float(settings.bedWidth) * 0.5 - (boundsMin.x + boundsMax.x) * 0.5
+            let offsetY = Float(settings.bedDepth) * 0.5 - (boundsMin.y + boundsMax.y) * 0.5
+            let offsetZ = -boundsMin.z
+            node.position = SCNVector3(offsetX, offsetY, offsetZ)
+
             container.addChildNode(node)
         }
 
@@ -273,10 +289,13 @@ enum SceneBuilder {
         var center = SCNVector3(0, 0, 0)
         var radius: Float = 30
         if let model = scene.rootNode.childNode(withName: modelName, recursively: true) {
+            // boundingBox 是**局部**坐标，模型节点本身带平移（居中到床面），
+            // 必须把 position 加上才是容器坐标。
             let (lo, hi) = model.boundingBox
-            center = SCNVector3((lo.x + hi.x) * 0.5,
-                                (lo.y + hi.y) * 0.5,
-                                (lo.z + hi.z) * 0.5)
+            let p = model.position
+            center = SCNVector3((lo.x + hi.x) * 0.5 + p.x,
+                                (lo.y + hi.y) * 0.5 + p.y,
+                                (lo.z + hi.z) * 0.5 + p.z)
             let diag = SIMD3<Float>(hi.x - lo.x, hi.y - lo.y, hi.z - lo.z)
             radius = max(simd_length(diag) * 0.5, 30)
         }
