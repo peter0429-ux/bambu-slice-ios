@@ -14,6 +14,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+WORK="${ROOT}/vendor"
 DEPLOYMENT_TARGET="${DEPLOYMENT_TARGET:-16.0}"
 JOBS="$(sysctl -n hw.ncpu)"
 
