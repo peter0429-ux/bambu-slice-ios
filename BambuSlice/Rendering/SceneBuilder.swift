@@ -257,29 +257,43 @@ enum SceneBuilder {
         let worldTarget = parent.convertPosition(SCNVector3(center.x, center.y, center.z), to: nil)
         node.look(at: worldTarget, up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, -1))
 
-        // 记下「家」的位置，供「聚焦模型」一键复位
-        node.userData = [
-            "restPosition": NSValue(scnVector3: pos),
-            "restTarget": NSValue(scnVector3: SCNVector3(center.x, center.y, center.z))
-        ]
     }
 
-    /// 一键回到模型特写。用户乱转之后按这个键就能回正。
+    /// 一键回到模型特写。
+    ///
+    /// 取景框现场从模型包围盒算，而不是记在节点上：
+    ///   - SCNNode 没有 userData 属性（那是 SpriteKit 的），存不了
+    ///   - 每次切片后模型会换，实时算反而总是对的
+    /// 模型的父节点就是 container，所以它的局部坐标就是容器坐标。
     static func focusCamera(on view: SCNView) {
         guard let scene = view.scene,
               let cam = scene.rootNode.childNode(withName: cameraName, recursively: true),
-              let parent = cam.parent else { return }
+              let container = cam.parent else { return }
 
-        guard let restPos = cam.userData?["restPosition"] as? NSValue,
-              let restTarget = cam.userData?["restTarget"] as? NSValue else { return }
+        var center = SCNVector3(0, 0, 0)
+        var radius: Float = 30
+        if let model = scene.rootNode.childNode(withName: modelName, recursively: true) {
+            let (lo, hi) = model.boundingBox
+            center = SCNVector3((lo.x + hi.x) * 0.5,
+                                (lo.y + hi.y) * 0.5,
+                                (lo.z + hi.z) * 0.5)
+            let diag = SIMD3<Float>(hi.x - lo.x, hi.y - lo.y, hi.z - lo.z)
+            radius = max(simd_length(diag) * 0.5, 30)
+        }
 
-        cam.position = restPos.scnVector3Value
-        let worldTarget = parent.convertPosition(restTarget.scnVector3Value, to: nil)
+        let dist = radius * 2.6
+        let elev: Float = .pi / 5        // 36° 俯角
+        let azim: Float = .pi / 4        // 45° 方位
+        cam.position = SCNVector3(center.x + dist * cos(elev) * sin(azim),
+                                  center.y - dist * cos(elev) * cos(azim),
+                                  center.z + dist * sin(elev))
+
+        let worldTarget = container.convertPosition(center, to: nil)
         cam.look(at: worldTarget, up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, -1))
 
-        // 让轨道控制器以模型为圆心（不是 220mm 的整张床）
         view.pointOfView = cam
         view.defaultCameraController.target = worldTarget
         view.setNeedsDisplay()
     }
+
 }
