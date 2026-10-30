@@ -203,4 +203,5 @@ struct SettingsSheet: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
 }
