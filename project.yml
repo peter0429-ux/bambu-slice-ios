@@ -60,6 +60,11 @@ targets:
           - $(SRCROOT)/BambuCore/include
         TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGN_STYLE: Automatic
+        # 与 libslic3r 的 -ffunction-sections 配合：把没用到的函数整段丢掉。
+        # 这样上游 master 新加的「iOS 未移植功能」（STEP 导入、HTTP 日志上传…）
+        # 只要没被调用，就不会变成链接错误。
+        # 注意：Debug 默认是 NO，这里显式打开。
+        DEAD_CODE_STRIPPING: YES
         OTHER_LDFLAGS:
           - $(inherited)
           # 静态库里定义了 ObjC 类（BBSlicer），-ObjC 保证那部分目标文件一定被链接进来，

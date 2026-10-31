@@ -150,6 +150,9 @@ list(REMOVE_ITEM _format
 list(APPEND _srcs ${_format})
 # Triangulation.cpp 在 sources.txt 里漏了，但 Cura 引擎的三角化要用
 list(APPEND _srcs "${BAMBU_SRC}/src/libslic3r/Triangulation.cpp")
+# SLA/IndexedMesh.cpp：FaceDetector 用它做射线求交（贴花/手绘面片检测）。
+# 这是一个自包含的 BVH，不依赖其余 SLA 子系统（那些要 OpenVDB/IGL）。
+list(APPEND _srcs "${BAMBU_SRC}/src/libslic3r/SLA/IndexedMesh.cpp")
 
 # 老版 clipper 的 Z 版。clipper_z.cpp 是 #define CLIPPERLIB_USE_XYZ + include "clipper.cpp"
 # 的 hack；pchheader.hpp 里已 include 了无 Z 版 clipper.hpp，若给 clipper_z 也套
@@ -169,6 +172,10 @@ add_library(slic3r STATIC ${_srcs} ${_admesh} ${_miniz} ${_minilzo} ${_qhull} ${
     "${CMAKE_CURRENT_LIST_DIR}/shim/format_stub.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/shim/fuzzyskin_stub.cpp"
     "${CMAKE_CURRENT_LIST_DIR}/shim/locale_stub.cpp"
+    # 上游 master 新增功能引用的符号（STEP / mcut / 日志加密 / macOS 专有）
+    "${CMAKE_CURRENT_LIST_DIR}/shim/drift_stub.cpp"
+    # nanosvg 是 header-only，需要单独一个 TU 展开实现
+    "${CMAKE_CURRENT_LIST_DIR}/shim/nanosvg_impl.cpp"
     $<TARGET_OBJECTS:clipper_z_obj>)
 
 target_include_directories(slic3r PUBLIC
@@ -190,6 +197,7 @@ target_include_directories(slic3r PUBLIC
     "${BAMBU_SRC}/src/miniz"
     "${BAMBU_SRC}/src/libnest2d/include"
     "${BAMBU_SRC}/src/nlohmann"
+    "${BAMBU_SRC}/src/nanosvg"
     "${CMAKE_CURRENT_BINARY_DIR}"
     "${DEPS}/boost/include"
     "${DEPS}/tbb/include"
@@ -234,6 +242,12 @@ target_compile_options(slic3r PRIVATE
 target_compile_options(slic3r PRIVATE
     -fexceptions
     -frtti
+    # 每个函数/数据独立成 section。配合 App 链接时的 -dead_strip，
+    # 未使用的函数（STEP 导入、HTTP 日志上传、Emboss 修复…）会被整个丢掉，
+    # 它们对「未移植库」的引用也就不再需要解析。
+    # 这是应对上游 master 持续漂移的关键：不是把每个新引用都补一遍。
+    -ffunction-sections
+    -fdata-sections
     # CommonCrypto 的 CC_MD5_* 在 iOS 13+ 标了 deprecated，只是警告，屏蔽掉
     -Wno-deprecated-declarations
     # Boost QVM 的老写法（template 关键字后面没跟模板参数）在 Clang 16+ 是错误，
