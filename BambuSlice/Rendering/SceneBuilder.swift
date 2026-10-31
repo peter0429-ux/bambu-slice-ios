@@ -71,7 +71,10 @@ enum SceneBuilder {
     // MARK: - 零件
 
     private static func radius(_ lo: SIMD3<Float>, _ hi: SIMD3<Float>) -> Float {
-        max(simd_length(hi - lo) * 0.5, 30)
+        // 下限 8mm：十几毫米的零件按 30mm 取景会退到 78mm 外，
+        // 模型只占屏幕一小块，看起来像「没对准」。
+        // 这个值必须和 focusCamera 里的一致，否则「聚焦」和「初始视角」不一样。
+        max(simd_length(hi - lo) * 0.5, 8)
     }
 
     private static func meshNode(mesh: Mesh) -> SCNNode {
@@ -311,12 +314,24 @@ enum SceneBuilder {
     ///   - SCNNode 没有 userData 属性（那是 SpriteKit 的），存不了
     ///   - 每次切片后模型会换，实时算反而总是对的
     /// 模型的父节点就是 container，所以它的局部坐标就是容器坐标。
+    ///
+    /// ⚠️ 关键：`view.allowsCameraControl = true` 时，SceneKit 的
+    /// `SCNCameraController` 会维护自己的相机状态（角度 / 距离 / target）。
+    /// 用户拖动过之后它就有了「活跃状态」，此时直接写相机节点的
+    /// position / look(at:) 只管一帧，下一帧就被控制器覆盖回去 ——
+    /// 表现就是**点了聚焦按钮没反应**。
+    ///
+    /// 正确顺序：
+    ///   1. 关掉相机控制（让控制器释放对相机的接管）
+    ///   2. 写 transform
+    ///   3. 把新的 target 同步给控制器
+    ///   4. 重新打开控制（控制器以当前 transform 重建内部状态）
     static func focusCamera(on view: SCNView) {
         guard let scene = view.scene,
               let cam = scene.rootNode.childNode(withName: cameraName, recursively: true),
               let container = cam.parent else { return }
 
-        var center = SCNVector3(0, 0, 0)
+        var center = SCNVector3(Float(220) * 0.5, Float(220) * 0.5, 15)
         var radius: Float = 30
         if let model = scene.rootNode.childNode(withName: modelName, recursively: true) {
             // boundingBox 是**局部**坐标，模型节点本身带平移（居中到床面），
@@ -326,22 +341,37 @@ enum SceneBuilder {
             center = SCNVector3((lo.x + hi.x) * 0.5 + p.x,
                                 (lo.y + hi.y) * 0.5 + p.y,
                                 (lo.z + hi.z) * 0.5 + p.z)
-            let diag = SIMD3<Float>(hi.x - lo.x, hi.y - lo.y, hi.z - lo.z)
-            radius = max(simd_length(diag) * 0.5, 30)
+            let diag = SIMD3<Float>(max(hi.x - lo.x, 0),
+                                    max(hi.y - lo.y, 0),
+                                    max(hi.z - lo.z, 0))
+            // 下限给 8mm 而不是 30mm：十几毫米的零件按 30 算会退到 78mm 外，
+            // 模型只占屏幕一小块，看起来像「没对准」。
+            radius = max(simd_length(diag) * 0.5, 8)
         }
 
         let dist = radius * 2.6
         let elev: Float = .pi / 5        // 36° 俯角
         let azim: Float = .pi / 4        // 45° 方位
-        cam.position = SCNVector3(center.x + dist * cos(elev) * sin(azim),
-                                  center.y - dist * cos(elev) * cos(azim),
-                                  center.z + dist * sin(elev))
-
+        let eye = SCNVector3(center.x + dist * cos(elev) * sin(azim),
+                             center.y - dist * cos(elev) * cos(azim),
+                             center.z + dist * sin(elev))
         let worldTarget = container.convertPosition(center, to: nil)
-        cam.look(at: worldTarget, up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, -1))
+
+        let wasEnabled = view.allowsCameraControl
+        view.allowsCameraControl = false
+
+        cam.position = eye
+        cam.look(at: worldTarget, up: SCNVector3(0, 1, 0),
+                 localFront: SCNVector3(0, 0, -1))
+
+        let cc = view.defaultCameraController
+        cc.stopInertia()                 // 不然惯性还在跑，会跟新位姿打架
+        cc.target = worldTarget
+        cc.pointOfView = cam             // 让控制器绑定到这台相机
+        cc.automaticTarget = false
 
         view.pointOfView = cam
-        view.defaultCameraController.target = worldTarget
+        view.allowsCameraControl = wasEnabled
         view.setNeedsDisplay()
     }
 
