@@ -123,6 +123,19 @@ jobs:
       #   1) Frameworks-sim 来自 simdeps 缓存，不含 libslic3r.a（那是 build-core-sim 的产物）
       #   2) vendor 目录曾被 if 跳过，导致 tar -C vendor 直接失败且没有可读报错
       # 所以每一步都显式检查并给出 ::error::。
+      # 一次性输出归档状态，用注解带出来（日志 API 拿不到）
+      - name: 归档自检
+        run: |
+          A=build-core-sim/libslic3r.a
+          if [ ! -f "$A" ]; then echo "::warning::[sim] 归档不存在 $A"; exit 0; fi
+          R="objects=$(ar t "$A" | wc -l | tr -d ' ')"
+          for o in Model.cpp.o utils.cpp.o Step.cpp.o Http.cpp.o MeshBoolean.cpp.o BBLEncrypt.cpp.o IndexedMesh.cpp.o; do
+            if ar t "$A" | grep -qx "$o"; then R="$R ${o}=Y"; else R="$R ${o}=N"; fi
+          done
+          R="$R stepSrc=$(test -f vendor/src/libslic3r/Step.cpp && echo Y || echo N)"
+          R="$R httpSrc=$(test -f vendor/src/libslic3r/Http.cpp && echo Y || echo N)"
+          echo "::warning::[sim] $R"
+
       - name: Pack simulator bundle
         run: |
           set -euo pipefail
@@ -257,6 +270,19 @@ jobs:
           git add -f ci-log/core-failure.txt
           git commit -m "core failure log run #${{ github.run_number }}" || exit 0
           git push -f origin ci-log || true
+
+      # 一次性输出归档状态，用注解带出来（日志 API 拿不到）
+      - name: 归档自检
+        run: |
+          A=build-core/libslic3r.a
+          if [ ! -f "$A" ]; then echo "::warning::[device] 归档不存在 $A"; exit 0; fi
+          R="objects=$(ar t "$A" | wc -l | tr -d ' ')"
+          for o in Model.cpp.o utils.cpp.o Step.cpp.o Http.cpp.o MeshBoolean.cpp.o BBLEncrypt.cpp.o IndexedMesh.cpp.o; do
+            if ar t "$A" | grep -qx "$o"; then R="$R ${o}=Y"; else R="$R ${o}=N"; fi
+          done
+          R="$R stepSrc=$(test -f vendor/src/libslic3r/Step.cpp && echo Y || echo N)"
+          R="$R httpSrc=$(test -f vendor/src/libslic3r/Http.cpp && echo Y || echo N)"
+          echo "::warning::[device] $R"
 
       - name: Arch assert
         if: steps.libcache.outputs.cache-hit != 'true'
