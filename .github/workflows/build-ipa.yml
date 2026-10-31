@@ -12,6 +12,11 @@ on:
     paths:
       - "BambuSlice/**"
       - "BambuCore/**"
+      # 测试代码和夹具也要触发：否则改了断言 CI 不会重跑，
+      # 等于测试白写（踩过：改 LayerHeight 用例后没有任何 run 被启动）。
+      - "BambuSliceTests/**"
+      # 构建期补丁脚本——改了它必须重编内核
+      - "tools/**"
       # 内核的 CMake/源码改动也要触发，否则改了 core 却不出包
       - "core/**"
       - "scripts/**"
