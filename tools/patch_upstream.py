@@ -60,10 +60,48 @@ def main() -> int:
         print("用法: patch_upstream.py <BambuStudio 源码根>", file=sys.stderr)
         return 2
     root = Path(sys.argv[1])
+    ok = True
+    ok &= patch_utils(root)
+    ok &= patch_log_sink(root)
+    return 0 if ok else 1
+
+
+def patch_log_sink(root: Path) -> bool:
+    """掐掉 LogSinkBackend::get_aes_256_cbc —— 它用 libcurl 拉日志加密密钥。
+
+    Http 依赖 libcurl + OpenSSL，iOS 端都没编；这个函数只服务于
+    「上传加密日志到 Bambu 服务器」，与切片无关。
+    """
+    path = root / "src" / "libslic3r" / "LogSink.cpp"
+    if not path.is_file():
+        print(f"[patch] 找不到 {path}", file=sys.stderr)
+        return False
+    text = path.read_text(encoding="utf-8", errors="replace")
+    new_text, did = replace_body(
+        text,
+        "void LogSinkBackend::get_aes_256_cbc(",
+        """
+    // [iOS port] 这里原本用 Slic3r::Http（libcurl + OpenSSL）拉密钥，
+    // iOS 端未移植。日志不上传，直接置空即可（调用方只用于写日志头）。
+    (void)enc_options;
+    (void)key_time;
+    key_str.clear();
+    key_iv.clear();
+    key_tag.clear();
+    return;
+""",
+    )
+    if did:
+        path.write_text(new_text, encoding="utf-8")
+    print(f"[patch] LogSinkBackend::get_aes_256_cbc: {'已改' if did else '未找到（跳过）'}")
+    return True
+
+
+def patch_utils(root: Path) -> bool:
     utils = root / "src" / "libslic3r" / "utils.cpp"
     if not utils.is_file():
         print(f"[patch] 找不到 {utils}", file=sys.stderr)
-        return 1
+        return False
 
     text = utils.read_text(encoding="utf-8", errors="replace")
     original = text
@@ -97,7 +135,7 @@ def main() -> int:
 
     print(f"[patch] normalize_utf8_nfc: {'已改' if did_nfc else '未找到（跳过）'}")
     print(f"[patch] set_log_path_and_level: {'已改' if did_log else '未找到（跳过）'}")
-    return 0
+    return True
 
 
 if __name__ == "__main__":
