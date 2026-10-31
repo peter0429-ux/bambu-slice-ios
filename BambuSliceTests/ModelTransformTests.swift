@@ -37,14 +37,16 @@ final class ModelTransformTests: XCTestCase {
     }
 
     func testRotate90SwapsXY() {
-        // 10x10 的立方体旋转 90° 后包围盒不变，但顶点 (10,0) 应变成 (0,10)
+        // 注意：旋转是绕**原点**做的，所以包围盒会整体挪到负象限
+        // （x: -10~0），不能断言绝对位置。预览和引擎都会重新居中，
+        // 这里只关心尺寸和顶点映射。
         let m = cube(10).applying(scale: 1.0, rotateZDeg: 90)
-        XCTAssertEqual(m.boundsMax.x, 10, accuracy: 1e-3)
-        XCTAssertEqual(m.boundsMax.y, 10, accuracy: 1e-3)
-        XCTAssertEqual(m.boundsMin.x, 0, accuracy: 1e-3)
-        XCTAssertEqual(m.boundsMin.y, 0, accuracy: 1e-3)
+        let size = m.boundsMax - m.boundsMin
+        XCTAssertEqual(size.x, 10, accuracy: 1e-3)
+        XCTAssertEqual(size.y, 10, accuracy: 1e-3)
+        XCTAssertEqual(size.z, 10, accuracy: 1e-3)
 
-        // 找到原来 (10,0,0) 的点，旋转后应在 (0,10,0) 附近
+        // 原来 (10,0,0) 的点，旋转 90° 后应落到 (0,10,0)
         let rotated = m.positions.contains { p in
             abs(p.x) < 1e-3 && abs(p.y - 10) < 1e-3 && abs(p.z) < 1e-3
         }
