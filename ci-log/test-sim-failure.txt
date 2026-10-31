@@ -1,0 +1,96 @@
+# test-sim run #89 commit c6535dad2b4253569d44aeef09ffe2a8a478bff8
+
+## 错误行
+7:--- xcodebuild: WARNING: Using the first of multiple matching destinations:
+2729:/Users/runner/work/bambu-slice-ios/bambu-slice-ios/BambuSliceTests/ModelTransformTests.swift:42: error: -[BambuSliceTests.ModelTransformTests testRotate90SwapsXY] : XCTAssertEqualWithAccuracy failed: ("-0.0") is not equal to ("10.0") +/- ("0.001")
+2730:/Users/runner/work/bambu-slice-ios/bambu-slice-ios/BambuSliceTests/ModelTransformTests.swift:44: error: -[BambuSliceTests.ModelTransformTests testRotate90SwapsXY] : XCTAssertEqualWithAccuracy failed: ("-10.0") is not equal to ("0.0") +/- ("0.001")
+2731:Test Case '-[BambuSliceTests.ModelTransformTests testRotate90SwapsXY]' failed (0.423 seconds).
+2738:Test Suite 'ModelTransformTests' failed at 2026-10-31 09:21:34.432.
+2756:2026-10-31 09:21:35.234352+0000 BambuSlice[8675:30407] fopen failed for data file: errno = 2 (No such file or directory)
+2757:2026-10-31 09:21:36.887363+0000 BambuSlice[8675:30407] fopen failed for data file: errno = 2 (No such file or directory)
+2770:Test Suite 'BambuSliceTests.xctest' failed at 2026-10-31 09:21:37.368.
+2772:Test Suite 'All tests' failed at 2026-10-31 09:21:37.369.
+
+## Undefined symbols 上下文
+
+## 日志尾部
+2026-10-31 09:21:32.120672+0000 BambuSlice[8675:30407] [UIFocus] SCNView implements focusItemsInRect: - caching for linear focus movement is limited as long as this view is on screen.
+Test Case '-[BambuSliceTests.CameraFocusTests testFocusCameraScalesWithModelSize]' passed (0.008 seconds).
+Test Suite 'CameraFocusTests' passed at 2026-10-31 09:21:32.124.
+	 Executed 6 tests, with 0 failures (0 unexpected) in 0.361 (0.365) seconds
+Test Suite 'GCodePostProcessorTests' started at 2026-10-31 09:21:32.125.
+Test Case '-[BambuSliceTests.GCodePostProcessorTests testEmptyRequestLeavesGCodeUntouched]' started.
+Test Case '-[BambuSliceTests.GCodePostProcessorTests testEmptyRequestLeavesGCodeUntouched]' passed (0.003 seconds).
+Test Case '-[BambuSliceTests.GCodePostProcessorTests testInsertsAfterZMovedToNewLayer]' started.
+Test Case '-[BambuSliceTests.GCodePostProcessorTests testInsertsAfterZMovedToNewLayer]' passed (0.003 seconds).
+Test Case '-[BambuSliceTests.GCodePostProcessorTests testMultipleLayers]' started.
+Test Case '-[BambuSliceTests.GCodePostProcessorTests testMultipleLayers]' passed (0.002 seconds).
+Test Case '-[BambuSliceTests.GCodePostProcessorTests testNoInsertWhenLayerOutOfRange]' started.
+Test Case '-[BambuSliceTests.GCodePostProcessorTests testNoInsertWhenLayerOutOfRange]' passed (0.002 seconds).
+Test Case '-[BambuSliceTests.GCodePostProcessorTests testPauseLandsInRealSlicedGCode]' started.
+Test Case '-[BambuSliceTests.GCodePostProcessorTests testPauseLandsInRealSlicedGCode]' passed (1.046 seconds).
+Test Suite 'GCodePostProcessorTests' passed at 2026-10-31 09:21:33.445.
+	 Executed 5 tests, with 0 failures (0 unexpected) in 1.057 (1.319) seconds
+Test Suite 'ModelTransformTests' started at 2026-10-31 09:21:33.445.
+Test Case '-[BambuSliceTests.ModelTransformTests testIdentityLeavesMeshUntouched]' started.
+Test Case '-[BambuSliceTests.ModelTransformTests testIdentityLeavesMeshUntouched]' passed (0.001 seconds).
+Test Case '-[BambuSliceTests.ModelTransformTests testRotate90SwapsXY]' started.
+/Users/runner/work/bambu-slice-ios/bambu-slice-ios/BambuSliceTests/ModelTransformTests.swift:42: error: -[BambuSliceTests.ModelTransformTests testRotate90SwapsXY] : XCTAssertEqualWithAccuracy failed: ("-0.0") is not equal to ("10.0") +/- ("0.001")
+/Users/runner/work/bambu-slice-ios/bambu-slice-ios/BambuSliceTests/ModelTransformTests.swift:44: error: -[BambuSliceTests.ModelTransformTests testRotate90SwapsXY] : XCTAssertEqualWithAccuracy failed: ("-10.0") is not equal to ("0.0") +/- ("0.001")
+Test Case '-[BambuSliceTests.ModelTransformTests testRotate90SwapsXY]' failed (0.423 seconds).
+Test Case '-[BambuSliceTests.ModelTransformTests testRotationKeepsLayerCountButChangesPath]' started.
+Test Case '-[BambuSliceTests.ModelTransformTests testRotationKeepsLayerCountButChangesPath]' passed (0.264 seconds).
+Test Case '-[BambuSliceTests.ModelTransformTests testScaleDoublesBounds]' started.
+Test Case '-[BambuSliceTests.ModelTransformTests testScaleDoublesBounds]' passed (0.001 seconds).
+Test Case '-[BambuSliceTests.ModelTransformTests testScaleReachesEngineLayerCount]' started.
+Test Case '-[BambuSliceTests.ModelTransformTests testScaleReachesEngineLayerCount]' passed (0.295 seconds).
+Test Suite 'ModelTransformTests' failed at 2026-10-31 09:21:34.432.
+	 Executed 5 tests, with 2 failures (0 unexpected) in 0.983 (0.987) seconds
+Test Suite 'SliceSmokeTests' started at 2026-10-31 09:21:34.432.
+Test Case '-[BambuSliceTests.SliceSmokeTests testAllParametersAcceptedByEngine]' started.
+Test Case '-[BambuSliceTests.SliceSmokeTests testAllParametersAcceptedByEngine]' passed (0.091 seconds).
+Test Case '-[BambuSliceTests.SliceSmokeTests testLayerHeightAffectsLayerCount]' started.
+Test Case '-[BambuSliceTests.SliceSmokeTests testLayerHeightAffectsLayerCount]' passed (0.257 seconds).
+Test Case '-[BambuSliceTests.SliceSmokeTests testSliceCubeProducesValidGCode]' started.
+Test Case '-[BambuSliceTests.SliceSmokeTests testSliceCubeProducesValidGCode]' passed (0.126 seconds).
+Test Case '-[BambuSliceTests.SliceSmokeTests testSliceCubeWithSupport]' started.
+Test Case '-[BambuSliceTests.SliceSmokeTests testSliceCubeWithSupport]' passed (0.085 seconds).
+Test Case '-[BambuSliceTests.SliceSmokeTests testSpeedOverridesReachGCode]' started.
+Test Case '-[BambuSliceTests.SliceSmokeTests testSpeedOverridesReachGCode]' passed (0.198 seconds).
+Test Suite 'SliceSmokeTests' passed at 2026-10-31 09:21:35.192.
+	 Executed 5 tests, with 0 failures (0 unexpected) in 0.757 (0.760) seconds
+Test Suite 'ViewportRenderTests' started at 2026-10-31 09:21:35.193.
+Test Case '-[BambuSliceTests.ViewportRenderTests testRenderedCoverageStableAcrossSizes]' started.
+2026-10-31 09:21:35.196132+0000 BambuSlice[8675:30407] [UIFocus] SCNView implements focusItemsInRect: - caching for linear focus movement is limited as long as this view is on screen.
+2026-10-31 09:21:35.234352+0000 BambuSlice[8675:30407] fopen failed for data file: errno = 2 (No such file or directory)
+2026-10-31 09:21:36.887363+0000 BambuSlice[8675:30407] fopen failed for data file: errno = 2 (No such file or directory)
+RENDERSTATS size=6 coverage=0.223 cx=0.499 cy=0.499
+2026-10-31 09:21:37.065618+0000 BambuSlice[8675:30407] [UIFocus] SCNView implements focusItemsInRect: - caching for linear focus movement is limited as long as this view is on screen.
+RENDERSTATS size=16 coverage=0.223 cx=0.499 cy=0.499
+2026-10-31 09:21:37.154975+0000 BambuSlice[8675:30407] [UIFocus] SCNView implements focusItemsInRect: - caching for linear focus movement is limited as long as this view is on screen.
+RENDERSTATS size=60 coverage=0.223 cx=0.499 cy=0.499
+Test Case '-[BambuSliceTests.ViewportRenderTests testRenderedCoverageStableAcrossSizes]' passed (2.073 seconds).
+Test Case '-[BambuSliceTests.ViewportRenderTests testRenderedModelIsVisibleAndFramed]' started.
+2026-10-31 09:21:37.269602+0000 BambuSlice[8675:30407] [UIFocus] SCNView implements focusItemsInRect: - caching for linear focus movement is limited as long as this view is on screen.
+RENDERSTATS size=16 coverage=0.223 cx=0.499 cy=0.499
+Test Case '-[BambuSliceTests.ViewportRenderTests testRenderedModelIsVisibleAndFramed]' passed (0.100 seconds).
+Test Suite 'ViewportRenderTests' passed at 2026-10-31 09:21:37.368.
+	 Executed 2 tests, with 0 failures (0 unexpected) in 2.173 (2.175) seconds
+Test Suite 'BambuSliceTests.xctest' failed at 2026-10-31 09:21:37.368.
+	 Executed 23 tests, with 2 failures (0 unexpected) in 5.330 (5.610) seconds
+Test Suite 'All tests' failed at 2026-10-31 09:21:37.369.
+	 Executed 23 tests, with 2 failures (0 unexpected) in 5.330 (5.612) seconds
+2026-10-31 09:23:21.121 xcodebuild[5989:21313] [MT] IDETestOperationsObserverDebug: 244.658 elapsed -- Testing started completed.
+2026-10-31 09:23:21.121 xcodebuild[5989:21313] [MT] IDETestOperationsObserverDebug: 0.000 sec, +0.000 sec -- start
+2026-10-31 09:23:21.121 xcodebuild[5989:21313] [MT] IDETestOperationsObserverDebug: 244.658 sec, +244.658 sec -- end
+
+Test session results, code coverage, and logs:
+	/Users/runner/Library/Developer/Xcode/DerivedData/BambuSlice-fjgmjvkuycjyufeqqhgaewykoaxy/Logs/Test/Test-BambuSlice-2026.10.31_09-18-18-+0000.xcresult
+
+Failing tests:
+	ModelTransformTests.testRotate90SwapsXY()
+	ModelTransformTests.testRotate90SwapsXY()
+
+** TEST FAILED **
+
+Testing started
