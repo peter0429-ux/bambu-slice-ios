@@ -19,7 +19,15 @@ if(NOT BAMBU_SRC)
     message(FATAL_ERROR "必须传 -DBAMBU_SRC=<BambuStudio 源码根>")
 endif()
 
-set(DEPS "${CMAKE_CURRENT_LIST_DIR}/../Frameworks")
+# 依赖根目录：真机 Frameworks/，模拟器 Frameworks-sim/。
+# 两者是不同 ABI 的单独编译产物（arm64-apple-ios vs arm64-apple-ios-simulator），
+# 路径必须跟着 PLATFORM 走，否则模拟器构建会去链接真机的 .a 并且找不到头。
+if(PLATFORM STREQUAL "simulator")
+    set(DEPS "${CMAKE_CURRENT_LIST_DIR}/../Frameworks-sim")
+else()
+    set(DEPS "${CMAKE_CURRENT_LIST_DIR}/../Frameworks")
+endif()
+message(STATUS "依赖目录: ${DEPS}")
 
 # 只编少量文件，用来快速验证 include 路径和宏对不对（约 1 分钟，而不是 10 分钟）
 option(CORE_PROBE "只编探针文件" OFF)

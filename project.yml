@@ -15,6 +15,11 @@ options:
 
 settings:
   base:
+    # 静态库与头文件根目录。
+    #   真机构建：用默认值（Frameworks/，arm64-apple-ios）
+    #   模拟器：  xcodebuild FRAMEWORKS_DIR=$PWD/Frameworks-sim ...
+    # 两者 ABI 不同不能混用，所以靠这个变量切换，其余工程配置共用一份。
+    FRAMEWORKS_DIR: $(SRCROOT)/Frameworks
     # 注意：SWIFT_VERSION 只接受语言大版本（4.0 / 4.2 / 5.0 / 6.0）。
     # 写 "5.9" 会被 xcodebuild 直接拒绝："SWIFT_VERSION '5.9' is unsupported"。
     SWIFT_VERSION: "5.0"
@@ -62,18 +67,18 @@ targets:
           - -ObjC
           - -lc++
           # libslic3r 及其依赖（真内核）。链接发生在 App target，不在 BambuCore 静态库上。
-          - -L$(SRCROOT)/Frameworks/libslic3r/lib
+          - -L$(FRAMEWORKS_DIR)/libslic3r/lib
           - -lslic3r
-          - -L$(SRCROOT)/Frameworks/boost/lib
+          - -L$(FRAMEWORKS_DIR)/boost/lib
           - -lboost_filesystem -lboost_thread -lboost_system -lboost_regex
           - -lboost_log -lboost_date_time -lboost_chrono -lboost_atomic
-          - -L$(SRCROOT)/Frameworks/tbb/lib
+          - -L$(FRAMEWORKS_DIR)/tbb/lib
           - -ltbb -ltbbmalloc
-          - -L$(SRCROOT)/Frameworks/zlib/lib
+          - -L$(FRAMEWORKS_DIR)/zlib/lib
           - -lz
-          - -L$(SRCROOT)/Frameworks/png/lib
+          - -L$(FRAMEWORKS_DIR)/png/lib
           - -lpng
-          - -L$(SRCROOT)/Frameworks/expat/lib
+          - -L$(FRAMEWORKS_DIR)/expat/lib
           - -lexpat
 
   # ───────────────────────────────────────────────
@@ -114,14 +119,14 @@ targets:
           - $(SRCROOT)/BambuCore/third_party/vendor-src/glu-libtess/src
           - $(SRCROOT)/BambuCore/third_party/vendor-src/miniz
           - $(SRCROOT)/BambuCore/third_party/vendor-src/qhull/src
-          - $(SRCROOT)/Frameworks/libslic3r/include
-          - $(SRCROOT)/Frameworks/boost/include
-          - $(SRCROOT)/Frameworks/tbb/include
-          - $(SRCROOT)/Frameworks/eigen/include
-          - $(SRCROOT)/Frameworks/cgal/include
-          - $(SRCROOT)/Frameworks/zlib/include
-          - $(SRCROOT)/Frameworks/expat/include
-          - $(SRCROOT)/Frameworks/cereal/include
+          - $(FRAMEWORKS_DIR)/libslic3r/include
+          - $(FRAMEWORKS_DIR)/boost/include
+          - $(FRAMEWORKS_DIR)/tbb/include
+          - $(FRAMEWORKS_DIR)/eigen/include
+          - $(FRAMEWORKS_DIR)/cgal/include
+          - $(FRAMEWORKS_DIR)/zlib/include
+          - $(FRAMEWORKS_DIR)/expat/include
+          - $(FRAMEWORKS_DIR)/cereal/include
 
 schemes:
   BambuSlice:
