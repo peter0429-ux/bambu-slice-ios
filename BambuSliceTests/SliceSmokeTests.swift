@@ -68,7 +68,7 @@ final class SliceSmokeTests: XCTestCase {
                       "有参数值被引擎拒绝，说明枚举字符串或类型写错了: \(rejected)")
     }
 
-    /// 层高变化应该反映到层数上（0.4 层高的层数应明显少于 0.2）。
+    /// 层高变化应该反映到层数上（0.25 层高的层数应明显少于 0.1）。
     func testLayerHeightAffectsLayerCount() async throws {
         let url = try fixtureURL()
         let engine = BambuCoreEngine()
@@ -77,11 +77,16 @@ final class SliceSmokeTests: XCTestCase {
         thin.layerHeight = 0.1
         let thinOut = try await engine.slice(at: url, settings: thin) { _, _ in }
 
+        // 注意：不能用 0.4。引擎的校验是「层高 ≤ 0.75 × 线宽」，
+        // 默认线宽 0.4 → 上限 0.3，写 0.4 会直接报 Too small line width。
         var thick = SliceSettings()
-        thick.layerHeight = 0.4
+        thick.layerHeight = 0.25
         let thickOut = try await engine.slice(at: url, settings: thick) { _, _ in }
 
         XCTAssertGreaterThan(thinOut.layerCount, thickOut.layerCount,
-                             "0.1mm 层高的层数应该多于 0.4mm（实际 \(thinOut.layerCount) vs \(thickOut.layerCount)）")
+                             "0.1mm 层高的层数应该多于 0.25mm（实际 \(thinOut.layerCount) vs \(thickOut.layerCount)）")
+        // 10mm 立方体：0.1mm 约 100 层，0.25mm 约 40 层，给足宽容度
+        XCTAssertGreaterThan(thinOut.layerCount, 50,
+                             "10mm 模型 0.1 层高应有约 100 层，实际 \(thinOut.layerCount)")
     }
 }
