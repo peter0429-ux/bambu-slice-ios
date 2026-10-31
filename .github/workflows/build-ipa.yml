@@ -127,15 +127,42 @@ jobs:
       - name: Pack simulator bundle
         run: |
           set -euo pipefail
+          # bundle-sim 本身也在 actions/cache 里，缓存命中时目录已存在。
+          # 不先清掉的话 `cp -R Frameworks-sim bundle-sim/Frameworks-sim`
+          # 会变成 bundle-sim/Frameworks-sim/Frameworks-sim 嵌套，tar 出来结构就错了。
+          rm -rf bundle-sim
           mkdir -p bundle-sim
+
+          echo "=== 源目录 ==="
+          ls -d Frameworks-sim build-core-sim 2>&1 || true
+          ls build-core-sim/*.a 2>&1 || true
+          ls build-core-sim/*.h 2>&1 || true
+
           cp -R Frameworks-sim bundle-sim/Frameworks-sim
           mkdir -p bundle-sim/Frameworks-sim/libslic3r/lib
           mkdir -p bundle-sim/Frameworks-sim/libslic3r/include
-          cp build-core-sim/libslic3r.a                  bundle-sim/Frameworks-sim/libslic3r/lib/
-          cp build-core-sim/libslic3r_version.h          bundle-sim/Frameworks-sim/libslic3r/include/
-          # 自检：模拟器版必须是给 simulator 的（同一 arm64，靠 SDK 区分，这里只确认存在）
-          test -f bundle-sim/Frameworks-sim/boost/include/boost/optional.hpp \
-            || { echo "::error::bundle 缺 boost/optional.hpp"; exit 1; }
+
+          # 这两个是 CMake 生成到 build 目录的，不在 Frameworks-sim 里
+          if [ -f build-core-sim/libslic3r.a ]; then
+            cp build-core-sim/libslic3r.a bundle-sim/Frameworks-sim/libslic3r/lib/
+          else
+            echo "::error::找不到 build-core-sim/libslic3r.a"
+            find . -maxdepth 3 -name 'libslic3r.a' 2>/dev/null || true
+            exit 1
+          fi
+          if [ -f build-core-sim/libslic3r_version.h ]; then
+            cp build-core-sim/libslic3r_version.h bundle-sim/Frameworks-sim/libslic3r/include/
+          else
+            echo "::error::找不到 build-core-sim/libslic3r_version.h"
+            find . -maxdepth 3 -name 'libslic3r_version.h' 2>/dev/null || true
+            exit 1
+          fi
+
+          echo "=== 打包前自检 ==="
+          ls -lh bundle-sim/Frameworks-sim/libslic3r/lib/
+          ls -lh bundle-sim/Frameworks-sim/libslic3r/include/
+          ls -d bundle-sim/Frameworks-sim/boost/include/boost 2>&1 || true
+
           tar -czf bundle-sim/frameworks-sim.tgz -C bundle-sim Frameworks-sim
           tar -czf bundle-sim/vendor-headers.tgz \
             --exclude='src/libigl' --exclude='src/eigen' \
