@@ -125,8 +125,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p bundle-sim
-          cp Frameworks-sim/libslic3r/lib/libslic3r.a bundle-sim/
-          tar -czf bundle-sim/frameworks-sim.tgz -C Frameworks-sim .
+          # 带目录名打包，test job 直接 tar -xzf 就能得到 Frameworks-sim/
+          tar -czf bundle-sim/frameworks-sim.tgz Frameworks-sim
+          # vendor 源码头（BambuCore 的 HEADER_SEARCH_PATHS 需要）
+          tar -czf bundle-sim/vendor-headers.tgz -C vendor src
           ls -lh bundle-sim/
 
       - name: Upload simulator bundle
@@ -276,6 +278,68 @@ jobs:
           name: core-bundle
           path: bundle
           retention-days: 7
+
+  # ─────────────────────────────────────────────────────────────
+  # 模拟器测试：真实跑一次切片
+  #
+  # 这就是「让 CI 自己发现问题」的落点：今天那些崩溃
+  # （缺 Print::process、get_at(-1) 越界、export_gcode 传 null、
+  #   log_memory_info 在 iOS 无实现）都会让这里失败，
+  # 不用再走「打包 → 装机 → 手点 → 发崩溃日志」这一圈。
+  # ─────────────────────────────────────────────────────────────
+  test-sim:
+    needs: core-sim
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch simulator core bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: core-bundle-sim
+          path: core-bundle-sim
+
+      - name: Unpack
+        run: |
+          tar -xzf core-bundle-sim/frameworks-sim.tgz
+          mkdir -p BambuCore/third_party
+          tar -xzf core-bundle-sim/vendor-headers.tgz -C BambuCore/third_party
+          mv BambuCore/third_party/src BambuCore/third_party/vendor-src
+          echo "--- 内核 ---"
+          ls -lh Frameworks-sim/libslic3r/lib/libslic3r.a
+          lipo -info Frameworks-sim/libslic3r/lib/libslic3r.a
+          echo "--- 可用模拟器 ---"
+          xcrun simctl list devices available | grep -i iphone | head -5 || true
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate project
+        run: xcodegen generate
+
+      - name: Run slice tests
+        run: |
+          set -o pipefail
+          for DEV in "iPhone 16" "iPhone 15" "iPhone 14"; do
+            echo "==> 尝试模拟器: $DEV"
+            if xcodebuild test -project BambuSlice.xcodeproj -scheme BambuSlice -configuration Debug -destination "platform=iOS Simulator,name=$DEV" FRAMEWORKS_DIR="$PWD/Frameworks-sim" 2>&1 | tee test.log; then
+              echo "==> 测试通过（$DEV）"
+              exit 0
+            fi
+            if grep -qE "Unable to find a destination|not available" test.log; then
+              echo "==> 没有 $DEV，换下一个"
+              continue
+            fi
+            echo "==> 测试失败（$DEV）"
+            exit 1
+          done
+          echo "::error::没有可用的 iPhone 模拟器"
+          exit 1
+
+      - name: 失败日志
+        if: failure()
+        run: |
+          grep -nE "error:|failed|XCTAssert|crash|SIGSEGV|SIGABRT" test.log | awk '!seen[$0]++' | head -30 | sed 's/^/::error:: /' || true
 
   build:
     needs: core

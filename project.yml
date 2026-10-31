@@ -128,6 +128,29 @@ targets:
           - $(FRAMEWORKS_DIR)/expat/include
           - $(FRAMEWORKS_DIR)/cereal/include
 
+
+  # ───────────────────────────────────────────────
+  # 单元测试：直接调引擎跑真实切片
+  #
+  # 为什么用 unit-test 而不是 ui-testing：今天那些崩溃全在 libslic3r 内部，
+  # 同进程调用就能复现，不用驱动文件选择器那套 UI 流程，稳定得多。
+  # 跑之前需要模拟器版内核：
+  #   xcodebuild test ... FRAMEWORKS_DIR=$PWD/Frameworks-sim
+  # ───────────────────────────────────────────────
+  BambuSliceTests:
+    # 类型名同样是点分写法，跟 library.static 一致
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: BambuSliceTests
+    dependencies:
+      - target: BambuSlice
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.bambuslice.tests
+        GENERATE_INFOPLIST_FILE: YES
+        ENABLE_TESTABILITY: YES
+
 schemes:
   BambuSlice:
     build:
@@ -135,5 +158,9 @@ schemes:
         BambuSlice: all
     run:
       config: Debug
+    test:
+      config: Debug
+      targets:
+        - BambuSliceTests
     archive:
       config: Release
