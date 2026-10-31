@@ -174,22 +174,22 @@ extension SliceSmokeTests {
                       "有参数没被引擎接受（键名拼错或类型不对）：\n\(rejected.joined(separator: "\n"))")
     }
 
-    /// 改速度必须真的改变打印时长。
+    /// 改速度必须真的改变 G-code 里的进给率（F 值）。
+    ///
+    /// 为什么不用「打印时长」判断：10mm 的小立方体每段移动只有 10mm，
+    /// 加速度/拐角速度限制下轴根本到不了 200mm/s，快慢都被运动学主导
+    /// （实测 338s vs 420s，只差 24%，看着像参数没生效）。
+    /// 直接读 G-code 的 F 值才是参数是否到达引擎的直接证据。
     ///
     /// 这条守的是「参数根本没到引擎」——比如 Swift 字典是值类型，
-    /// `s.overrides = ov` 写早了就等于复制一份，后续写入全部丢失，
+    /// `s.overrides = ov` 写早了等于复制一份，后续写入全部丢失，
     /// 而这种失效**不会产生任何 warning**，只能靠行为差异发现。
-    func testSpeedOverridesAffectPrintTime() async throws {
+    func testSpeedOverridesReachGCode() async throws {
         let url = try fixtureURL()
         let engine = BambuCoreEngine()
 
         var fast = SliceSettings()
         fast.layerHeight = 0.2
-        // ⚠️ 必须关掉「按层耗时自动降速」。
-        // 10mm 立方体每层只要一两秒，引擎会把每层强行拉到 5s，
-        // 于是总时长由冷却主导，速度参数的影响被完全掩盖
-        // （实测开冷却时 fast=338s / slow=420s，只差 24%）。
-        fast.slowDownForLayerCooling = false
         fast.outerWallSpeed = 200
         fast.innerWallSpeed = 200
         fast.sparseInfillSpeed = 200
@@ -212,8 +212,25 @@ extension SliceSmokeTests {
         let fastOut = try await engine.slice(at: url, settings: fast) { _, _ in }
         let slowOut = try await engine.slice(at: url, settings: slow) { _, _ in }
 
-        XCTAssertGreaterThan(fastOut.durationSeconds, 0)
-        XCTAssertGreaterThan(slowOut.durationSeconds, fastOut.durationSeconds * 1.5,
-                             "速度降到 1/10，时长几乎没变（fast=\(fastOut.durationSeconds)s, slow=\(slowOut.durationSeconds)s）——参数没进到引擎")
+        let fastMaxF = maxFeedrate(fastOut.gcode)
+        let slowMaxF = maxFeedrate(slowOut.gcode)
+
+        XCTAssertGreaterThan(slowMaxF, 0, "G-code 里没有 F 值，解析有问题")
+        XCTAssertGreaterThan(fastMaxF, slowMaxF * 3,
+                             "速度调快 10 倍，G-code 最大进给率却几乎没变"
+                             + "（fast maxF=\(fastMaxF) mm/min, slow maxF=\(slowMaxF) mm/min）"
+                             + " —— 速度参数没进到引擎")
+    }
+
+    /// 取 G-code 里出现过的最大进给率（mm/min）
+    private func maxFeedrate(_ gcode: String) -> Double {
+        var maxF = 0.0
+        gcode.enumerateLines { line, _ in
+            guard line.hasPrefix("G1") || line.hasPrefix("G0") else { return }
+            for token in line.split(separator: " ") where token.hasPrefix("F") {
+                if let v = Double(token.dropFirst()), v > maxF { maxF = v }
+            }
+        }
+        return maxF
     }
 }
