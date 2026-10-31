@@ -90,3 +90,125 @@ final class SliceSmokeTests: XCTestCase {
                              "10mm 模型 0.1 层高应有约 100 层，实际 \(thinOut.layerCount)")
     }
 }
+
+// MARK: - 参数直通（P1/P2/P3/P4）回归
+
+extension SliceSmokeTests {
+
+    /// 把所有参数改成非默认值，一起下发。
+    ///
+    /// 断言里那两类 warning 一个都不能出现：
+    ///   「未知配置项，已忽略」  → 键名拼错 / 该版本没有这个键
+    ///   「配置项值无效，已忽略」→ 类型错（比如该整数传了小数、枚举字符串不对）
+    ///
+    /// 这条测试的价值：以后加参数时，只要有任何一个键写错，CI 立刻指名道姓。
+    func testAllParametersAcceptedByEngine() async throws {
+        let url = try fixtureURL()
+
+        var s = SliceSettings()
+        s.layerHeight = 0.2
+        s.wallLoops = 2
+        s.infillDensity = 0.15
+        s.supportEnabled = true
+
+        // P1
+        s.topShellLayers = 3
+        s.topShellThickness = 0.8
+        s.bottomShellLayers = 2
+        s.bottomShellThickness = 0.4
+        s.ensureVerticalShellThickness = "partial"
+        s.topSurfacePattern = "monotonic"
+        s.bottomSurfacePattern = "line"
+        s.internalSolidInfillPattern = "zig-zag"
+        s.onlyOneWallFirstLayer = true
+        s.seamPosition = "back"
+        s.ironingType = "top"
+        s.wallSequence = "outer wall/inner wall"
+        s.elefantFootCompensation = 0.1
+        s.xyHoleCompensation = 0.05
+        s.xyContourCompensation = 0.05
+
+        // P2：速度全部改成明显不同的值
+        s.outerWallSpeed = 30
+        s.innerWallSpeed = 45
+        s.sparseInfillSpeed = 70
+        s.internalSolidInfillSpeed = 80
+        s.topSurfaceSpeed = 55
+        s.initialLayerSpeed = 20
+        s.initialLayerInfillSpeed = 40
+        s.travelSpeed = 200
+        s.supportSpeed = 60
+        s.supportInterfaceSpeed = 50
+        s.bridgeSpeed = 20
+
+        // P3
+        s.retractionLength = 1.2
+        s.retractionSpeed = 40
+        s.retractionMinimumTravel = 3
+        s.zHop = 0.6
+        s.zHopType = "Normal Lift"
+        s.wipeEnabled = true
+        s.wipeDistance = 3
+        s.reduceCrossingWall = true
+
+        // P4
+        s.fanMaxSpeed = 90
+        s.fanMinSpeed = 30
+        s.fanCoolingLayerTime = 40
+        s.slowDownForLayerCooling = true
+        s.slowDownLayerTime = 8
+        s.overhangFanSpeed = 80
+        s.closeFanFirstXLayers = 2
+        s.fullFanSpeedLayer = 3
+        s.enableOverhangBridgeFan = true
+
+        let engine = BambuCoreEngine()
+        let out = try await engine.slice(at: url, settings: s) { _, _ in }
+
+        XCTAssertGreaterThan(out.gcode.count, 1024, "参数全开后切片没产出")
+
+        let rejected = out.warnings.filter {
+            $0.contains("未知配置项") || $0.contains("配置项值无效")
+        }
+        XCTAssertTrue(rejected.isEmpty,
+                      "有参数没被引擎接受（键名拼错或类型不对）：\n\(rejected.joined(separator: "\n"))")
+    }
+
+    /// 改速度必须真的改变打印时长。
+    ///
+    /// 这条守的是「参数根本没到引擎」——比如 Swift 字典是值类型，
+    /// `s.overrides = ov` 写早了就等于复制一份，后续写入全部丢失，
+    /// 而这种失效**不会产生任何 warning**，只能靠行为差异发现。
+    func testSpeedOverridesAffectPrintTime() async throws {
+        let url = try fixtureURL()
+        let engine = BambuCoreEngine()
+
+        var fast = SliceSettings()
+        fast.layerHeight = 0.2
+        fast.outerWallSpeed = 200
+        fast.innerWallSpeed = 200
+        fast.sparseInfillSpeed = 200
+        fast.internalSolidInfillSpeed = 200
+        fast.topSurfaceSpeed = 200
+        fast.initialLayerSpeed = 100
+        fast.initialLayerInfillSpeed = 200
+        fast.travelSpeed = 400
+
+        var slow = fast
+        slow.outerWallSpeed = 20
+        slow.innerWallSpeed = 20
+        slow.sparseInfillSpeed = 20
+        slow.internalSolidInfillSpeed = 20
+        slow.topSurfaceSpeed = 20
+        slow.initialLayerSpeed = 10
+        slow.initialLayerInfillSpeed = 20
+        slow.travelSpeed = 40
+
+        let fastOut = try await engine.slice(at: url, settings: fast) { _, _ in }
+        let slowOut = try await engine.slice(at: url, settings: slow) { _, _ in }
+
+        XCTAssertGreaterThan(fastOut.durationSeconds, 0)
+        XCTAssertGreaterThan(slowOut.durationSeconds, fastOut.durationSeconds * 1.5,
+                             "速度降到 1/10，时长几乎没变（fast=\(fastOut.durationSeconds)s, slow=\(slowOut.durationSeconds)s）——参数没进到引擎")
+    }
+}

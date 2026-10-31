@@ -112,6 +112,46 @@ struct SliceSettings {
     /// XY 轮廓补偿 mm（正=放大外形）
     var xyContourCompensation: Double = 0.0
 
+    // ── P2：速度（mm/s）──────────────────────────────────────
+    // 默认值取自 PrintConfig.cpp 的 set_default_value()。
+    var outerWallSpeed: Double = 60
+    var innerWallSpeed: Double = 60
+    var sparseInfillSpeed: Double = 100
+    var internalSolidInfillSpeed: Double = 100
+    var topSurfaceSpeed: Double = 100
+    var initialLayerSpeed: Double = 30
+    var initialLayerInfillSpeed: Double = 60
+    var travelSpeed: Double = 120
+    var supportSpeed: Double = 80
+    var supportInterfaceSpeed: Double = 80
+    var bridgeSpeed: Double = 25
+
+    // ── P3：回抽与 Z hop ────────────────────────────────────
+    var retractionLength: Double = 0.8
+    var retractionSpeed: Double = 30
+    /// 空驶距离超过它才回抽
+    var retractionMinimumTravel: Double = 2
+    var zHop: Double = 0.4
+    /// Auto Lift / Normal Lift / Slope Lift / Spiral Lift（引擎默认 Spiral Lift）
+    var zHopType: String = "Spiral Lift"
+    var wipeEnabled: Bool = false
+    var wipeDistance: Double = 2
+    var reduceCrossingWall: Bool = false
+
+    // ── P4：冷却风扇 ────────────────────────────────────────
+    var fanMaxSpeed: Int = 100
+    var fanMinSpeed: Int = 20
+    /// 单层耗时低于它会自动降速（秒）
+    var fanCoolingLayerTime: Int = 60
+    var slowDownForLayerCooling: Bool = true
+    /// 降到的最短层时间（秒）
+    var slowDownLayerTime: Int = 5
+    var overhangFanSpeed: Int = 100
+    /// 前 N 层不开风扇
+    var closeFanFirstXLayers: Int = 1
+    var fullFanSpeedLayer: Int = 0
+    var enableOverhangBridgeFan: Bool = true
+
     /// 手绘强制支撑的三角形索引（对应 STL 面片序号）。
     /// 用户在 3D 视图里点选的面会被标记为 ENFORCER，切片时引擎强制在该处生成支撑。
     var supportFacets: Set<Int> = []
@@ -175,7 +215,7 @@ struct SliceSettings {
         ov["tree_support_branch_angle"]     = String(format: "%.1f", treeSupportBranchAngle)
         ov["tree_support_branch_diameter"]  = String(format: "%.2f", treeSupportBranchDiameter)
         ov["tree_support_wall_count"]       = String(treeSupportWallCount)
-        s.overrides = ov
+
         // P1：壳层 / 顶底面 / 接缝 / 补偿
         ov["top_shell_layers"]                 = String(topShellLayers)
         ov["top_shell_thickness"]              = String(format: "%.3f", topShellThickness)
@@ -192,6 +232,46 @@ struct SliceSettings {
         ov["elefant_foot_compensation"]        = String(format: "%.3f", elefantFootCompensation)
         ov["xy_hole_compensation"]             = String(format: "%.3f", xyHoleCompensation)
         ov["xy_contour_compensation"]          = String(format: "%.3f", xyContourCompensation)
+
+        // P2：速度（Bambu 里都是 coFloats，单位 mm/s；单值会被解析成单元素数组）
+        ov["outer_wall_speed"]             = String(format: "%.1f", outerWallSpeed)
+        ov["inner_wall_speed"]             = String(format: "%.1f", innerWallSpeed)
+        ov["sparse_infill_speed"]          = String(format: "%.1f", sparseInfillSpeed)
+        ov["internal_solid_infill_speed"]  = String(format: "%.1f", internalSolidInfillSpeed)
+        ov["top_surface_speed"]            = String(format: "%.1f", topSurfaceSpeed)
+        ov["initial_layer_speed"]          = String(format: "%.1f", initialLayerSpeed)
+        ov["initial_layer_infill_speed"]   = String(format: "%.1f", initialLayerInfillSpeed)
+        ov["travel_speed"]                 = String(format: "%.1f", travelSpeed)
+        ov["support_speed"]                = String(format: "%.1f", supportSpeed)
+        ov["support_interface_speed"]      = String(format: "%.1f", supportInterfaceSpeed)
+        ov["bridge_speed"]                 = String(format: "%.1f", bridgeSpeed)
+
+        // P3：回抽与 Z hop
+        ov["retraction_length"]            = String(format: "%.3f", retractionLength)
+        ov["retraction_speed"]             = String(format: "%.1f", retractionSpeed)
+        ov["retraction_minimum_travel"]    = String(format: "%.2f", retractionMinimumTravel)
+        ov["z_hop"]                        = String(format: "%.2f", zHop)
+        ov["z_hop_types"]                  = zHopType
+        ov["wipe"]                         = wipeEnabled ? "1" : "0"
+        ov["wipe_distance"]                = String(format: "%.2f", wipeDistance)
+        ov["reduce_crossing_wall"]         = reduceCrossingWall ? "1" : "0"
+
+        // P4：冷却风扇（这几项是 coInt，必须整数；用小数会被静默拒绝）
+        ov["fan_max_speed"]                = String(fanMaxSpeed)
+        ov["fan_min_speed"]                = String(fanMinSpeed)
+        ov["fan_cooling_layer_time"]       = String(fanCoolingLayerTime)
+        ov["slow_down_for_layer_cooling"]  = slowDownForLayerCooling ? "1" : "0"
+        ov["slow_down_layer_time"]         = String(slowDownLayerTime)
+        ov["overhang_fan_speed"]           = String(overhangFanSpeed)
+        ov["close_fan_the_first_x_layers"] = String(closeFanFirstXLayers)
+        ov["full_fan_speed_layer"]         = String(fullFanSpeedLayer)
+        ov["enable_overhang_bridge_fan"]   = enableOverhangBridgeFan ? "1" : "0"
+
+        // ⚠️ 必须在**所有**键都写完之后再赋值！
+        // s.overrides 是 NSDictionary，Swift 字典是值类型，
+        // 提前赋值等于复制一份，后续写入根本到不了引擎。
+        // （P1 那 15 个参数就这样静默失效过一版。）
+        s.overrides = ov
 
         s.supportFacets = supportFacets.map { NSNumber(value: $0) }
         return s

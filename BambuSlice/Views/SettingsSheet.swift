@@ -100,7 +100,7 @@ struct SettingsSheet: View {
                     Picker("顶面", selection: $settings.topSurfacePattern) {
                         Text("单调线（推荐）").tag("monotonicline")
                         Text("单调").tag("monotonic")
-                        Text("直线").tag("rectilinear")
+                        Text("直线").tag("line")
                         Text("同心").tag("concentric")
                         Text("希尔伯特").tag("hilbertcurve")
                         Text("锯齿").tag("zig-zag")
@@ -108,7 +108,7 @@ struct SettingsSheet: View {
                     Picker("底面", selection: $settings.bottomSurfacePattern) {
                         Text("单调线（推荐）").tag("monotonicline")
                         Text("单调").tag("monotonic")
-                        Text("直线").tag("rectilinear")
+                        Text("直线").tag("line")
                         Text("同心").tag("concentric")
                         Text("希尔伯特").tag("hilbertcurve")
                         Text("锯齿").tag("zig-zag")
@@ -116,7 +116,7 @@ struct SettingsSheet: View {
                     Picker("内部实心", selection: $settings.internalSolidInfillPattern) {
                         Text("单调线（推荐）").tag("monotonicline")
                         Text("单调").tag("monotonic")
-                        Text("直线").tag("rectilinear")
+                        Text("直线").tag("line")
                         Text("同心").tag("concentric")
                         Text("锯齿").tag("zig-zag")
                     }
@@ -158,6 +158,107 @@ struct SettingsSheet: View {
                                 range: -0.5...0.5, step: 0.05,
                                 format: "%.2f mm",
                                 hint: "正值放大外形")
+                }
+
+                // ── P2：速度 ──────────────────────────────────
+                Section {
+                    speedSlider("外壁", $settings.outerWallSpeed, 10...300, hint: "决定外观质量，越慢越好")
+                    speedSlider("内壁", $settings.innerWallSpeed, 10...300)
+                    speedSlider("稀疏填充", $settings.sparseInfillSpeed, 20...500, hint: "最快的一档，影响总时长")
+                    speedSlider("内部实心", $settings.internalSolidInfillSpeed, 20...300)
+                    speedSlider("顶面", $settings.topSurfaceSpeed, 10...300)
+                    speedSlider("首层", $settings.initialLayerSpeed, 5...100, hint: "首层慢一点附着更牢")
+                    speedSlider("首层填充", $settings.initialLayerInfillSpeed, 5...150)
+                    speedSlider("空驶", $settings.travelSpeed, 30...600, hint: "不挤料时的移动速度")
+                    speedSlider("桥接", $settings.bridgeSpeed, 5...100, hint: "悬空跨桥，太快会断")
+                } header: {
+                    Text("速度")
+                }
+
+                if settings.supportEnabled {
+                    Section("支撑速度") {
+                        speedSlider("支撑", $settings.supportSpeed, 10...300)
+                        speedSlider("支撑接触面", $settings.supportInterfaceSpeed, 10...300)
+                    }
+                }
+
+                // ── P3：回抽与 Z hop ─────────────────────────
+                Section {
+                    paramSlider("回抽长度",
+                                value: $settings.retractionLength,
+                                range: 0...5, step: 0.1,
+                                format: "%.1f mm",
+                                hint: "太短会拉丝，太长容易堵")
+                    paramSlider("回抽速度",
+                                value: $settings.retractionSpeed,
+                                range: 5...100, step: 1,
+                                format: "%.0f mm/s")
+                    paramSlider("最小回抽距离",
+                                value: $settings.retractionMinimumTravel,
+                                range: 0...10, step: 0.5,
+                                format: "%.1f mm",
+                                hint: "空驶超过这个距离才回抽")
+                    paramSlider("Z 抬升",
+                                value: $settings.zHop,
+                                range: 0...2, step: 0.1,
+                                format: "%.1f mm",
+                                hint: "回抽时抬头，避免撞到已打印部分")
+                    Picker("Z 抬升方式", selection: $settings.zHopType) {
+                        Text("螺旋").tag("Spiral Lift")
+                        Text("自动").tag("Auto Lift")
+                        Text("普通").tag("Normal Lift")
+                        Text("斜向").tag("Slope Lift")
+                    }
+                } header: {
+                    Text("回抽")
+                }
+
+                Section("擦拭与避让") {
+                    Toggle("回抽时擦拭", isOn: $settings.wipeEnabled)
+                    if settings.wipeEnabled {
+                        paramSlider("擦拭距离",
+                                    value: $settings.wipeDistance,
+                                    range: 0...10, step: 0.5,
+                                    format: "%.1f mm",
+                                    hint: "喷嘴在壁面上蹭掉余料，减少拉丝")
+                    }
+                    Toggle("避免跨越外墙", isOn: $settings.reduceCrossingWall)
+                }
+
+                // ── P4：冷却风扇 ─────────────────────────────
+                Section {
+                    Stepper("最大风扇：\(settings.fanMaxSpeed)%", value: $settings.fanMaxSpeed, in: 0...100)
+                    Stepper("最小风扇：\(settings.fanMinSpeed)%", value: $settings.fanMinSpeed, in: 0...100)
+                    Stepper("前 \(settings.closeFanFirstXLayers) 层关风扇",
+                            value: $settings.closeFanFirstXLayers, in: 0...20)
+                    Stepper("从第 \(settings.fullFanSpeedLayer) 层起全速",
+                            value: $settings.fullFanSpeedLayer, in: 0...50)
+                } header: {
+                    Text("风扇")
+                }
+
+                Section {
+                    Toggle("按层耗时自动降速", isOn: $settings.slowDownForLayerCooling)
+                    paramSlider("层耗时阈值",
+                                value: Binding(
+                                    get: { Double(settings.fanCoolingLayerTime) },
+                                    set: { settings.fanCoolingLayerTime = Int($0) }
+                                ),
+                                range: 5...120, step: 1,
+                                format: "%.0f s",
+                                hint: "单层打完快于它，自动放慢让层冷却")
+                    paramSlider("最短层时间",
+                                value: Binding(
+                                    get: { Double(settings.slowDownLayerTime) },
+                                    set: { settings.slowDownLayerTime = Int($0) }
+                                ),
+                                range: 0...60, step: 1,
+                                format: "%.0f s")
+                    Stepper("悬垂风扇：\(settings.overhangFanSpeed)%",
+                            value: $settings.overhangFanSpeed, in: 0...100)
+                    Toggle("悬垂/桥接强制冷却", isOn: $settings.enableOverhangBridgeFan)
+                } header: {
+                    Text("冷却策略")
                 }
 
                 Section("材料") {
@@ -292,5 +393,15 @@ struct SettingsSheet: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    /// 速度滑条：统一 mm/s 单位，减少重复写法。
+    @ViewBuilder
+    private func speedSlider(_ title: String,
+                             _ value: Binding<Double>,
+                             _ range: ClosedRange<Double>,
+                             hint: String? = nil) -> some View {
+        paramSlider(title, value: value, range: range, step: 5,
+                    format: "%.0f mm/s", hint: hint)
     }
 }
