@@ -305,6 +305,8 @@ jobs:
   # ─────────────────────────────────────────────────────────────
   test-sim:
     needs: core-sim
+    permissions:
+      contents: write
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -359,8 +361,37 @@ jobs:
       - name: 失败日志
         if: failure()
         run: |
-          echo "=== test.log 错误行 ==="
-          grep -nE "error:|failed|XCTAssert|crash|SIGSEGV|SIGABRT|Unable to" test.log | awk '!seen[$0]++' | head -30 | sed 's/^/::error:: /' || true
+          echo "=== 链接/编译错误摘要 ==="
+          grep -nE "Undefined symbols|ld: |clang: error|error:|duplicate symbol" test.log \
+            | awk '!seen[$0]++' | head -20 | sed 's/^/::error:: /' || true
+
+          # Undefined symbols 后面的符号清单才是关键，单独取出来
+          echo "=== Undefined symbols 详情 ==="
+          awk '/Undefined symbols for architecture/{f=1} f{print; n++} n>25{exit}' test.log \
+            | sed 's/^/::error:: /' || true
+
+          # 全文推到 ci-log 分支，注解放不下时去那里看
+          mkdir -p ci-log
+          {
+            echo "# test-sim run #${{ github.run_number }} commit ${{ github.sha }}"
+            echo
+            echo "## 错误行"
+            grep -nE "Undefined symbols|ld: |clang: error|error:|failed" test.log | awk '!seen[$0]++' | head -80
+            echo
+            echo "## Undefined symbols 上下文"
+            awk '/Undefined symbols for architecture/{f=1} f{print} f&&/^$/{c++; if(c>1) exit}' test.log | head -120
+            echo
+            echo "## 日志尾部"
+            tail -80 test.log
+          } > ci-log/test-sim-failure.txt
+          wc -l ci-log/test-sim-failure.txt || true
+
+          git config user.name "ci-bot"
+          git config user.email "ci-bot@users.noreply.github.com"
+          git checkout -B ci-log
+          git add -f ci-log/test-sim-failure.txt
+          git commit -m "ci: test-sim 失败日志 #${{ github.run_number }}" || true
+          git push -f origin ci-log || true
 
   build:
     needs: core
