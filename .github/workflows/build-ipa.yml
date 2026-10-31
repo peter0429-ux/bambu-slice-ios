@@ -70,7 +70,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: build-core-sim
-          key: libslic3r-sim-v1-${{ hashFiles('core/**', 'scripts/build_deps_ios.sh', 'scripts/ios.toolchain.cmake') }}
+          key: libslic3r-sim-v2-${{ hashFiles('core/**', 'scripts/build_deps_ios.sh', 'scripts/ios.toolchain.cmake', 'tools/patch_upstream.py') }}
 
       - name: Fetch BambuStudio source
         # 不设 if：libslic3r 缓存命中时也需要 vendor 目录（打包 artifact 用）
@@ -78,6 +78,12 @@ jobs:
           curl -L --retry 3 -o bs.tar.gz "https://codeload.github.com/bambulab/BambuStudio/tar.gz/refs/heads/master"
           mkdir -p vendor
           tar -xzf bs.tar.gz -C vendor --strip-components=1
+
+      # 掐掉两处把我们没编的库拖进来的函数（boost.locale / libcurl）
+      - name: Patch upstream sources
+        if: steps.simlib.outputs.cache-hit != 'true'
+
+        run: python3 tools/patch_upstream.py vendor
 
       - name: Build libslic3r (simulator)
         if: steps.simlib.outputs.cache-hit != 'true'
@@ -191,7 +197,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: bundle
-          key: libslic3r-bundle-v2-${{ hashFiles('core/**', 'scripts/build_deps_ios.sh', 'scripts/ios.toolchain.cmake') }}
+          key: libslic3r-bundle-v3-${{ hashFiles('core/**', 'scripts/build_deps_ios.sh', 'scripts/ios.toolchain.cmake', 'tools/patch_upstream.py') }}
 
       # ccache 只在「内核真的改了」时有用（能复用未改动文件的 .o）
       # 注意 macOS 上 Homebrew ccache 4.x 的默认目录是 ~/Library/Caches/ccache，
@@ -229,6 +235,12 @@ jobs:
             "https://codeload.github.com/bambulab/BambuStudio/tar.gz/refs/heads/master"
           mkdir -p vendor
           tar -xzf bs.tar.gz -C vendor --strip-components=1
+
+      # 掐掉两处把我们没编的库拖进来的函数（boost.locale / libcurl）
+      - name: Patch upstream sources
+        if: steps.libcache.outputs.cache-hit != 'true'
+
+        run: python3 tools/patch_upstream.py vendor
 
       - name: Build libslic3r
         if: steps.libcache.outputs.cache-hit != 'true'
