@@ -89,6 +89,10 @@ final class ViewportRenderTests: XCTestCase {
             return
         }
 
+        // 打到 stdout，CI 会把它转成注解，方便看实际取景数字
+        print(String(format: "RENDERSTATS size=16 coverage=%.3f cx=%.3f cy=%.3f",
+                     s.coverage, s.cx, s.cy))
+
         // 1. 必须真的画出了东西（全黑时覆盖率是 0）
         XCTAssertGreaterThan(s.coverage, 0.03,
                              "画面上几乎没有模型（覆盖率 \(s.coverage)），可能全黑或相机没对准")
@@ -111,6 +115,8 @@ final class ViewportRenderTests: XCTestCase {
                 XCTFail("离屏渲染失败（\(size)mm）：模拟器没有 Metal 设备，或 snapshot 返回空")
                 return
             }
+            print(String(format: "RENDERSTATS size=%.0f coverage=%.3f cx=%.3f cy=%.3f",
+                         size, s.coverage, s.cx, s.cy))
             XCTAssertGreaterThan(s.coverage, 0.03, "\(size)mm 模型不可见（覆盖率 \(s.coverage)）")
             XCTAssertLessThan(s.coverage, 0.65, "\(size)mm 模型铺满画面（覆盖率 \(s.coverage)）")
             XCTAssertEqual(s.cx, 0.5, accuracy: 0.10, "\(size)mm 模型横向偏移 (x=\(s.cx))")

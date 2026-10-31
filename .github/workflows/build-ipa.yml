@@ -406,6 +406,16 @@ jobs:
             FRAMEWORKS_DIR="$PWD/Frameworks-sim" \
             2>&1 | tee test.log
 
+      # 即使测试通过，也把取景的实测数字抛出来（覆盖率 / 质心），
+      # 这样调取景时不用靠人眼看，CI 每轮都给数。
+      - name: 渲染统计
+        if: always()
+        run: |
+          if [ -f test.log ]; then
+            grep -o "RENDERSTATS.*" test.log | awk '!seen[$0]++' | head -8 \
+              | sed 's/^/::warning:: /' || true
+          fi
+
       - name: 失败日志
         if: failure()
         run: |
