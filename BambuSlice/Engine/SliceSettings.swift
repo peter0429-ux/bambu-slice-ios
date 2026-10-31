@@ -152,6 +152,16 @@ struct SliceSettings {
     var fullFanSpeedLayer: Int = 0
     var enableOverhangBridgeFan: Bool = true
 
+    /// Z hop 类型对应的引擎枚举索引（顺序来自 PrintConfig.cpp 的 enum_values）
+    var zHopTypeIndex: Int {
+        switch zHopType {
+        case "Auto Lift":   return 0
+        case "Normal Lift": return 1
+        case "Slope Lift":  return 2
+        default:            return 3   // Spiral Lift（引擎默认）
+        }
+    }
+
     /// 手绘强制支撑的三角形索引（对应 STL 面片序号）。
     /// 用户在 3D 视图里点选的面会被标记为 ENFORCER，切片时引擎强制在该处生成支撑。
     var supportFacets: Set<Int> = []
@@ -251,7 +261,9 @@ struct SliceSettings {
         ov["retraction_speed"]             = String(format: "%.1f", retractionSpeed)
         ov["retraction_minimum_travel"]    = String(format: "%.2f", retractionMinimumTravel)
         ov["z_hop"]                        = String(format: "%.2f", zHop)
-        ov["z_hop_types"]                  = zHopType
+        // z_hop_types 是 nullable 枚举，keys_map 为空，只能按整数索引传。
+        // 见 Libslic3rBackend.cpp 里同名键的特殊处理。
+        ov["z_hop_types"]                  = String(zHopTypeIndex)
         ov["wipe"]                         = wipeEnabled ? "1" : "0"
         ov["wipe_distance"]                = String(format: "%.2f", wipeDistance)
         ov["reduce_crossing_wall"]         = reduceCrossingWall ? "1" : "0"

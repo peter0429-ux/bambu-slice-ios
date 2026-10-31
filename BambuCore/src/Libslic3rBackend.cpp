@@ -113,6 +113,42 @@ void set_bed_shape(Slic3r::DynamicPrintConfig &cfg, double w, double d) {
     else if (cfg.has("bed_shape")) set_str(cfg, "bed_shape", shape);
 }
 
+// Bambu 上游有个坑：ConfigOptionEnumsGeneric 的构造函数有 3 个重载忘了传
+// keys_map（默认给 nullptr）。用到这些构造的配置项，在 GCode::append_full_config
+// 里序列化（往 G-code 头部写 "; key = value" 注释）时会 deref 空指针。
+//
+// 切到 75% 后崩在 ConfigOptionEnumsGenericTempl<false>::serialize_single_value
+// 就是这个原因。这些项只影响 G-code 头部的配置回显，不影响打印路径，直接剔掉。
+// 注意：不能把坏项 erase 掉！Print::apply() 里会按 key 取配置项
+// （option<ConfigOptionX>("xxx")->value），删掉就变成 nullptr 解引用，
+// 崩在 Print::apply 里（比原来更早）。
+//
+// 正确做法是给它补一个空映射表：serialize_single_value 里是
+//     for (const auto& kvp : *keys_map) if (kvp.second == v) ss << kvp.first;
+// 空 map 只是循环 0 次、输出空值，不会崩，也不影响任何刀路计算
+// （这些项只在 G-code 头部回显配置）。
+static void patch_broken_enum_options(Slic3r::DynamicPrintConfig &cfg,
+                                      std::vector<std::string> &warnings) {
+    static const Slic3r::t_config_enum_values kEmptyEnumValues;
+    std::vector<std::string> patched;
+    for (const std::string &key : cfg.keys()) {
+        Slic3r::ConfigOption *opt = cfg.option(key);
+        if (opt == nullptr || opt->type() != Slic3r::coEnums)
+            continue;
+        if (auto *g = dynamic_cast<Slic3r::ConfigOptionEnumsGeneric *>(opt)) {
+            if (g->keys_map == nullptr) { g->keys_map = &kEmptyEnumValues; patched.push_back(key); }
+        } else if (auto *gn = dynamic_cast<Slic3r::ConfigOptionEnumsGenericNullable *>(opt)) {
+            if (gn->keys_map == nullptr) { gn->keys_map = &kEmptyEnumValues; patched.push_back(key); }
+        }
+    }
+    if (!patched.empty()) {
+        std::string msg = "已为 " + std::to_string(patched.size())
+                        + " 个枚举项补空映射表（否则导出 G-code 时空指针崩溃）:";
+        for (size_t i = 0; i < patched.size() && i < 6; ++i) msg += " " + patched[i];
+        warnings.push_back(msg);
+    }
+}
+
 Slic3r::DynamicPrintConfig make_config(const Settings &s, std::vector<std::string> &warnings) {
     // full_print_config() 会把 PrintConfigDef 里所有键填上默认值。
     // 如果某个 fork 没有这个静态方法，等价写法：
@@ -120,6 +156,12 @@ Slic3r::DynamicPrintConfig make_config(const Settings &s, std::vector<std::strin
     //     for (const auto &k : Slic3r::PrintConfigDef::instance().keys())
     //         cfg.set_key_value(k, Slic3r::PrintConfigDef::instance().opt(k)->clone());
     Slic3r::DynamicPrintConfig cfg = Slic3r::DynamicPrintConfig::full_print_config();
+
+    // ⚠️ 必须在**任何** set_str 之前修好枚举映射表。
+    // 上游那几个漏传 keys_map 的构造函数会让 keys_map == nullptr，
+    // 此时 set_deserialize 查表就是空指针解引用 —— 直接崩溃（不是警告）。
+    // 之前这步放在 apply 之前，结果设置 z_hop_types 时进程就没了。
+    patch_broken_enum_options(cfg, warnings);
 
     // 机器相关。真机上应当从 vendor bundle 的打印机预设 ini 读，这里给最小集合。
     set_str(cfg, "printer_model", s.printer_profile);
@@ -218,46 +260,20 @@ Slic3r::DynamicPrintConfig make_config(const Settings &s, std::vector<std::strin
         // set_str 现在会区分「键不存在」和「值非法」两种情况。
         // 值非法（比如枚举字符串拼错）以前是静默失败的，
         // 用户会觉得"这个开关调了没反应"，所以这里也报出来。
+        // z_hop_types 是 nullable 枚举，且它的 keys_map 正是空的那一批。
+        // 走字符串反序列化会失败（补丁后是返回 false，补丁前是崩溃），
+        // 所以这里按整数索引直接写 values：
+        //   0=Auto Lift 1=Normal Lift 2=Slope Lift 3=Spiral Lift
+        if (kv.first == "z_hop_types") {
+            if (auto *o = dynamic_cast<Slic3r::ConfigOptionInts *>(cfg.option("z_hop_types"))) {
+                try { o->values = { std::stoi(kv.second) }; } catch (...) {}
+            }
+            continue;
+        }
         if (!set_str(cfg, kv.first.c_str(), kv.second))
             warnings.push_back("配置项值无效，已忽略: " + kv.first + " = " + kv.second);
     }
     return cfg;
-}
-
-// Bambu 上游有个坑：ConfigOptionEnumsGeneric 的构造函数有 3 个重载忘了传
-// keys_map（默认给 nullptr）。用到这些构造的配置项，在 GCode::append_full_config
-// 里序列化（往 G-code 头部写 "; key = value" 注释）时会 deref 空指针。
-//
-// 切到 75% 后崩在 ConfigOptionEnumsGenericTempl<false>::serialize_single_value
-// 就是这个原因。这些项只影响 G-code 头部的配置回显，不影响打印路径，直接剔掉。
-// 注意：不能把坏项 erase 掉！Print::apply() 里会按 key 取配置项
-// （option<ConfigOptionX>("xxx")->value），删掉就变成 nullptr 解引用，
-// 崩在 Print::apply 里（比原来更早）。
-//
-// 正确做法是给它补一个空映射表：serialize_single_value 里是
-//     for (const auto& kvp : *keys_map) if (kvp.second == v) ss << kvp.first;
-// 空 map 只是循环 0 次、输出空值，不会崩，也不影响任何刀路计算
-// （这些项只在 G-code 头部回显配置）。
-static void patch_broken_enum_options(Slic3r::DynamicPrintConfig &cfg,
-                                      std::vector<std::string> &warnings) {
-    static const Slic3r::t_config_enum_values kEmptyEnumValues;
-    std::vector<std::string> patched;
-    for (const std::string &key : cfg.keys()) {
-        Slic3r::ConfigOption *opt = cfg.option(key);
-        if (opt == nullptr || opt->type() != Slic3r::coEnums)
-            continue;
-        if (auto *g = dynamic_cast<Slic3r::ConfigOptionEnumsGeneric *>(opt)) {
-            if (g->keys_map == nullptr) { g->keys_map = &kEmptyEnumValues; patched.push_back(key); }
-        } else if (auto *gn = dynamic_cast<Slic3r::ConfigOptionEnumsGenericNullable *>(opt)) {
-            if (gn->keys_map == nullptr) { gn->keys_map = &kEmptyEnumValues; patched.push_back(key); }
-        }
-    }
-    if (!patched.empty()) {
-        std::string msg = "已为 " + std::to_string(patched.size())
-                        + " 个枚举项补空映射表（否则导出 G-code 时空指针崩溃）:";
-        for (size_t i = 0; i < patched.size() && i < 6; ++i) msg += " " + patched[i];
-        warnings.push_back(msg);
-    }
 }
 
 // ── 进度回调 ─────────────────────────────────────────────────
@@ -382,8 +398,6 @@ bool slice(const std::string &path,
         }
 
         // 剔掉 keys_map 未初始化的枚举项，否则 export_gcode 写配置回显时空指针崩溃
-        patch_broken_enum_options(cfg, warnings);
-
         place_on_bed(model, s);
 
         report(0.15f, "构建打印任务");
