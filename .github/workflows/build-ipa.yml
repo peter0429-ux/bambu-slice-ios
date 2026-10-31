@@ -120,15 +120,27 @@ jobs:
           git commit -m "ci: core-sim 失败日志 #${{ github.run_number }}" || true
           git push -f origin ci-log || true
 
+      # 注意：不设 if，缓存命中时也要重打一次包。
+      # 因为 libslic3r.a 和 libslic3r_version.h 是 CMake 生成到 build-core-sim/ 的，
+      # 不复制进 Frameworks-sim 的话，下游 test-sim 会报
+      #   libslic3r.h:4:10: fatal error: 'libslic3r_version.h' file not found
       - name: Pack simulator bundle
-        if: steps.simlib.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           mkdir -p bundle-sim
-          # 带目录名打包，test job 直接 tar -xzf 就能得到 Frameworks-sim/
-          tar -czf bundle-sim/frameworks-sim.tgz Frameworks-sim
-          # vendor 源码头（BambuCore 的 HEADER_SEARCH_PATHS 需要）
-          tar -czf bundle-sim/vendor-headers.tgz -C vendor src
+          cp -R Frameworks-sim bundle-sim/Frameworks-sim
+          mkdir -p bundle-sim/Frameworks-sim/libslic3r/lib
+          mkdir -p bundle-sim/Frameworks-sim/libslic3r/include
+          cp build-core-sim/libslic3r.a                  bundle-sim/Frameworks-sim/libslic3r/lib/
+          cp build-core-sim/libslic3r_version.h          bundle-sim/Frameworks-sim/libslic3r/include/
+          # 自检：模拟器版必须是给 simulator 的（同一 arm64，靠 SDK 区分，这里只确认存在）
+          test -f bundle-sim/Frameworks-sim/boost/include/boost/optional.hpp \
+            || { echo "::error::bundle 缺 boost/optional.hpp"; exit 1; }
+          tar -czf bundle-sim/frameworks-sim.tgz -C bundle-sim Frameworks-sim
+          tar -czf bundle-sim/vendor-headers.tgz \
+            --exclude='src/libigl' --exclude='src/eigen' \
+            --exclude='*.cpp' --exclude='*.c' --exclude='*.mm' \
+            -C vendor src
           ls -lh bundle-sim/
 
       - name: Upload simulator bundle
