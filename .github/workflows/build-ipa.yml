@@ -301,13 +301,22 @@ jobs:
 
       - name: Unpack
         run: |
+          set -x
+          echo "--- artifact 内容 ---"
+          ls -lh core-bundle-sim/
+          echo "--- 解包 Frameworks-sim ---"
           tar -xzf core-bundle-sim/frameworks-sim.tgz
+          ls -la Frameworks-sim/ || true
+          echo "--- 解包 vendor 源码 ---"
           mkdir -p BambuCore/third_party
           tar -xzf core-bundle-sim/vendor-headers.tgz -C BambuCore/third_party
-          mv BambuCore/third_party/src BambuCore/third_party/vendor-src
-          echo "--- 内核 ---"
-          ls -lh Frameworks-sim/libslic3r/lib/libslic3r.a
-          lipo -info Frameworks-sim/libslic3r/lib/libslic3r.a
+          ls -la BambuCore/third_party/ || true
+          if [ -d BambuCore/third_party/src ]; then
+            mv BambuCore/third_party/src BambuCore/third_party/vendor-src
+          fi
+          echo "--- 内核静态库 ---"
+          find Frameworks-sim -name 'libslic3r.a' -maxdepth 4 || echo "!! 没找到 libslic3r.a"
+          lipo -info Frameworks-sim/libslic3r/lib/libslic3r.a || true
           echo "--- 可用模拟器 ---"
           xcrun simctl list devices available | grep -i iphone | head -5 || true
 
