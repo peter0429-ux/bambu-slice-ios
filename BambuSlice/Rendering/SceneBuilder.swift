@@ -313,61 +313,84 @@ enum SceneBuilder {
     /// 取景框现场从模型包围盒算，而不是记在节点上：
     ///   - SCNNode 没有 userData 属性（那是 SpriteKit 的），存不了
     ///   - 每次切片后模型会换，实时算反而总是对的
-    /// 模型的父节点就是 container，所以它的局部坐标就是容器坐标。
     ///
-    /// ⚠️ 关键：`view.allowsCameraControl = true` 时，SceneKit 的
-    /// `SCNCameraController` 会维护自己的相机状态（角度 / 距离 / target）。
-    /// 用户拖动过之后它就有了「活跃状态」，此时直接写相机节点的
-    /// position / look(at:) 只管一帧，下一帧就被控制器覆盖回去 ——
-    /// 表现就是**点了聚焦按钮没反应**。
+    /// 两个坑（都踩过）：
     ///
-    /// 正确顺序：
-    ///   1. 关掉相机控制（让控制器释放对相机的接管）
-    ///   2. 写 transform
-    ///   3. 把新的 target 同步给控制器
-    ///   4. 重新打开控制（控制器以当前 transform 重建内部状态）
+    /// 1. `view.allowsCameraControl = true` 时，`SCNCameraController` 自己维护
+    ///    相机状态。用户拖动过之后直接写 position 只管一帧，下一帧会被覆盖，
+    ///    表现为「点了没反应」。所以写位姿前后要临时关掉控制。
+    ///
+    /// 2. **不要用 `look(at:)`，也不要去动 `cc.pointOfView` / `cc.stopInertia()`。**
+    ///    相机挂在旋转了 -90° 的 container 下，`look(at:)` 的 up 向量与父节点
+    ///    坐标系不一致，算出来的朝向可能是反的（表现：画面全黑）；
+    ///    而给控制器塞 pointOfView 会让它用内部距离/角度重算位姿，同样会跑飞。
+    ///    这里改成自己用叉乘算基向量，直接写世界变换，结果完全确定。
     static func focusCamera(on view: SCNView) {
         guard let scene = view.scene,
               let cam = scene.rootNode.childNode(withName: cameraName, recursively: true),
               let container = cam.parent else { return }
 
-        var center = SCNVector3(Float(220) * 0.5, Float(220) * 0.5, 15)
+        // ── 1. 取景中心与尺度（container 的 Z-up 坐标）──
+        var center = SCNVector3(Float(220) * 0.5, Float(220) * 0.5, 10)
         var radius: Float = 30
         if let model = scene.rootNode.childNode(withName: modelName, recursively: true) {
-            // boundingBox 是**局部**坐标，模型节点本身带平移（居中到床面），
-            // 必须把 position 加上才是容器坐标。
             let (lo, hi) = model.boundingBox
             let p = model.position
-            center = SCNVector3((lo.x + hi.x) * 0.5 + p.x,
-                                (lo.y + hi.y) * 0.5 + p.y,
-                                (lo.z + hi.z) * 0.5 + p.z)
-            let diag = SIMD3<Float>(max(hi.x - lo.x, 0),
-                                    max(hi.y - lo.y, 0),
-                                    max(hi.z - lo.z, 0))
-            // 下限给 8mm 而不是 30mm：十几毫米的零件按 30 算会退到 78mm 外，
-            // 模型只占屏幕一小块，看起来像「没对准」。
-            radius = max(simd_length(diag) * 0.5, 8)
+            let dx = max(hi.x - lo.x, 0)
+            let dy = max(hi.y - lo.y, 0)
+            let dz = max(hi.z - lo.z, 0)
+            if dx + dy + dz > 1e-3 {          // 包围盒非空才用
+                center = SCNVector3((lo.x + hi.x) * 0.5 + p.x,
+                                    (lo.y + hi.y) * 0.5 + p.y,
+                                    (lo.z + hi.z) * 0.5 + p.z)
+                // 下限 8mm：十几毫米的零件按 30mm 取景会退到很远，模型只占一小块
+                radius = max(simd_length(SIMD3<Float>(dx, dy, dz)) * 0.5, 8)
+            }
         }
 
+        // ── 2. 相机位置（container 空间），36° 俯角 / 45° 方位 ──
         let dist = radius * 2.6
-        let elev: Float = .pi / 5        // 36° 俯角
-        let azim: Float = .pi / 4        // 45° 方位
+        let elev: Float = .pi / 5
+        let azim: Float = .pi / 4
         let eye = SCNVector3(center.x + dist * cos(elev) * sin(azim),
                              center.y - dist * cos(elev) * cos(azim),
                              center.z + dist * sin(elev))
+        let worldEye    = container.convertPosition(eye, to: nil)
         let worldTarget = container.convertPosition(center, to: nil)
 
+        // ── 3. 自己算朝向矩阵（相机看向自身 -Z）──
+        let eyeV = SIMD3<Float>(worldEye.x, worldEye.y, worldEye.z)
+        let tgtV = SIMD3<Float>(worldTarget.x, worldTarget.y, worldTarget.z)
+        var forward = tgtV - eyeV
+        let flen = simd_length(forward)
+        guard flen > 1e-5 else { return }
+        forward /= flen
+
+        let worldUp = SIMD3<Float>(0, 1, 0)
+        var right = simd_cross(forward, worldUp)
+        if simd_length(right) < 1e-4 {        // 视线与 up 平行时退化，换个参考轴
+            right = simd_cross(forward, SIMD3<Float>(1, 0, 0))
+        }
+        right = simd_normalize(right)
+        let up = simd_normalize(simd_cross(right, forward))
+
+        var m = matrix_identity_float4x4
+        m.columns.0 = SIMD4<Float>(right, 0)
+        m.columns.1 = SIMD4<Float>(up, 0)
+        m.columns.2 = SIMD4<Float>(-forward, 0)   // 相机朝 -Z
+        m.columns.3 = SIMD4<Float>(eyeV, 1)
+
+        // ── 4. 应用：关控制 → 写变换 → 同步轨道中心 → 开控制 ──
         let wasEnabled = view.allowsCameraControl
         view.allowsCameraControl = false
 
-        cam.position = eye
-        cam.look(at: worldTarget, up: SCNVector3(0, 1, 0),
-                 localFront: SCNVector3(0, 0, -1))
+        if cam.camera == nil { cam.camera = SCNCamera() }
+        cam.camera?.zNear = 0.05
+        cam.camera?.zFar = Double(max(radius * 200, 5000))
+        cam.simdWorldTransform = m
 
         let cc = view.defaultCameraController
-        cc.stopInertia()                 // 不然惯性还在跑，会跟新位姿打架
-        cc.target = worldTarget
-        cc.pointOfView = cam             // 让控制器绑定到这台相机
+        cc.target = worldTarget               // 只同步轨道中心，不碰 pointOfView
         cc.automaticTarget = false
 
         view.pointOfView = cam
