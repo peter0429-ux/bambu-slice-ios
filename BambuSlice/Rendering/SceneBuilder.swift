@@ -358,7 +358,7 @@ enum SceneBuilder {
         // 现在显式设成 .vertical，用包围球半径 + sin 求距离，宽高取较大者。
         if cam.camera == nil { cam.camera = SCNCamera() }
         cam.camera?.projectionDirection = .vertical
-        cam.camera?.zNear = max(radius * 0.02, 0.05)
+        cam.camera?.zNear = Double(max(radius * 0.02, 0.05))   // zNear/zFar 是 Double
         cam.camera?.zFar = Double(max(radius * 200, 5000))
 
         let fovY = Float(cam.camera?.fieldOfView ?? 40) * .pi / 180
