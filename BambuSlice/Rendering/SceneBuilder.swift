@@ -71,10 +71,10 @@ enum SceneBuilder {
     // MARK: - 零件
 
     private static func radius(_ lo: SIMD3<Float>, _ hi: SIMD3<Float>) -> Float {
-        // 下限 8mm：十几毫米的零件按 30mm 取景会退到 78mm 外，
-        // 模型只占屏幕一小块，看起来像「没对准」。
+        // 下限只用来兜住退化情况（点/空网格）。不要写大值：
+        // 曾经写 30mm、后来 8mm，结果小零件被当成 8mm 取景，屏幕上只有一小块。
         // 这个值必须和 focusCamera 里的一致，否则「聚焦」和「初始视角」不一样。
-        max(simd_length(hi - lo) * 0.5, 8)
+        max(simd_length(hi - lo) * 0.5, 1)
     }
 
     private static func meshNode(mesh: Mesh) -> SCNNode {
@@ -343,8 +343,9 @@ enum SceneBuilder {
                 center = SCNVector3((lo.x + hi.x) * 0.5 + p.x,
                                     (lo.y + hi.y) * 0.5 + p.y,
                                     (lo.z + hi.z) * 0.5 + p.z)
-                // 下限 8mm：十几毫米的零件按 30mm 取景会退到很远，模型只占一小块
-                radius = max(simd_length(SIMD3<Float>(dx, dy, dz)) * 0.5, 8)
+                // 下限只兜退化情况；取景必须严格跟着模型尺寸走，
+                // 否则小零件会被放大成一个"最小尺寸"，显得特别小。
+                radius = max(simd_length(SIMD3<Float>(dx, dy, dz)) * 0.5, 1)
             }
         }
 
