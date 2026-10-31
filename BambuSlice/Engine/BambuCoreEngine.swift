@@ -68,13 +68,27 @@ final class BambuCoreEngine {
                                                            progress(fraction, stage)
                                                        })
 
-                    cont.resume(returning: SliceOutput(gcode: result.gcode,
+                    // 指定层暂停：在抬 Z 之后插入 M400 U1
+                    var gcode = result.gcode
+                    var warnings = result.warnings
+                    if !settings.pauseLayers.isEmpty {
+                        let (patched, inserted) = GCodePostProcessor.insertPauses(
+                            gcode, atLayers: settings.pauseLayers)
+                        gcode = patched
+                        if inserted < settings.pauseLayers.count {
+                            let missing = settings.pauseLayers.sorted()
+                            warnings.append("有暂停层超出模型层数（共 \(result.layerCount) 层），"
+                                            + "只有 \(inserted) 处生效：\(missing)")
+                        }
+                    }
+
+                    cont.resume(returning: SliceOutput(gcode: gcode,
                                                        durationSeconds: result.estimatedDurationSeconds,
                                                        filamentGrams: result.filamentGrams,
                                                        filamentMillimeters: result.filamentMillimeters,
                                                        layerCount: Int(result.layerCount),
                                                        backend: result.backend,
-                                                       warnings: result.warnings))
+                                                       warnings: warnings))
                 } catch {
                     let ns = error as NSError
                     if ns.domain == BBSlicerErrorDomain,

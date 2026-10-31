@@ -162,6 +162,10 @@ struct SliceSettings {
         }
     }
 
+    /// 需要暂停的层号（从 1 开始）。空表示不暂停。
+    /// 换色 / 埋螺母用：截图里 G-code 会插入 `M400 U1`。
+    var pauseLayers: Set<Int> = []
+
     /// 手绘强制支撑的三角形索引（对应 STL 面片序号）。
     /// 用户在 3D 视图里点选的面会被标记为 ENFORCER，切片时引擎强制在该处生成支撑。
     var supportFacets: Set<Int> = []

@@ -3,6 +3,8 @@ import SwiftUI
 struct SettingsSheet: View {
     @Binding var settings: SliceSettings
     @Environment(\.dismiss) private var dismiss
+    /// 「暂停点」里待添加的层号
+    @State private var newPauseLayer = 5
 
     var body: some View {
         NavigationStack {
@@ -259,6 +261,42 @@ struct SettingsSheet: View {
                     Toggle("悬垂/桥接强制冷却", isOn: $settings.enableOverhangBridgeFan)
                 } header: {
                     Text("冷却策略")
+                }
+
+                // ── 暂停点（换色 / 埋螺母）──────────────
+                Section {
+                    Stepper("待添加：第 \(newPauseLayer) 层",
+                            value: $newPauseLayer, in: 1...2000)
+                    Button("添加到暂停列表") {
+                        settings.pauseLayers.insert(newPauseLayer)
+                    }
+                    .disabled(settings.pauseLayers.contains(newPauseLayer))
+
+                    if !settings.pauseLayers.isEmpty {
+                        ForEach(settings.pauseLayers.sorted(), id: \.self) { layer in
+                            HStack {
+                                Image(systemName: "pause.circle")
+                                    .foregroundStyle(.secondary)
+                                Text("第 \(layer) 层")
+                                Spacer()
+                                Button {
+                                    settings.pauseLayers.remove(layer)
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        Button("清空", role: .destructive) {
+                            settings.pauseLayers.removeAll()
+                        }
+                    }
+                } header: {
+                    Text("暂停点")
+                } footer: {
+                    Text("打印到该层时机器会暂停等你确认。指令插在抬 Z 之后，"
+                         + "避免喷嘴停在上一层高度刮到已打好的部分。")
                 }
 
                 Section("材料") {
