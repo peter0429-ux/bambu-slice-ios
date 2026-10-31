@@ -148,6 +148,12 @@ targets:
     platform: iOS
     sources:
       - path: BambuSliceTests
+        excludes:
+          - "Fixtures/**"
+      # .stl 不是已知源码类型，XcodeGen 默认不会放进 Copy Bundle Resources，
+      # Bundle(for:) 就找不到。显式声明为资源，测试才拿得到夹具。
+      - path: BambuSliceTests/Fixtures
+        buildPhase: resources
     dependencies:
       - target: BambuSlice
     settings:
