@@ -329,21 +329,24 @@ jobs:
       - name: Run slice tests
         run: |
           set -o pipefail
-          for DEV in "iPhone 16" "iPhone 15" "iPhone 14"; do
-            echo "==> 尝试模拟器: $DEV"
-            if xcodebuild test -project BambuSlice.xcodeproj -scheme BambuSlice -configuration Debug -destination "platform=iOS Simulator,name=$DEV" FRAMEWORKS_DIR="$PWD/Frameworks-sim" 2>&1 | tee test.log; then
-              echo "==> 测试通过（$DEV）"
-              exit 0
-            fi
-            if grep -qE "Unable to find a destination|not available" test.log; then
-              echo "==> 没有 $DEV，换下一个"
-              continue
-            fi
-            echo "==> 测试失败（$DEV）"
+          # 别猜机型：直接从 simctl 里取第一个可用的 iPhone。
+          # 之前写死 "iPhone 16"/"iPhone 15" 并靠 grep "Unable to find a destination"
+          # 判断是否换下一个，但 Xcode 实际报的是 "Unable to find a device"，永远匹配不上。
+          DEV=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin); print(next((x['name'] for v in d['devices'].values() for x in v if x['name'].startswith('iPhone')), ''))")
+          if [ -z "$DEV" ]; then
+            echo "::error::runner 上没有可用的 iPhone 模拟器"
+            xcrun simctl list devices available | head -30
             exit 1
-          done
-          echo "::error::没有可用的 iPhone 模拟器"
-          exit 1
+          fi
+          echo "==> 使用模拟器: $DEV"
+
+          xcodebuild test \
+            -project BambuSlice.xcodeproj \
+            -scheme BambuSlice \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,name=$DEV" \
+            FRAMEWORKS_DIR="$PWD/Frameworks-sim" \
+            2>&1 | tee test.log
 
       - name: 失败日志
         if: failure()
