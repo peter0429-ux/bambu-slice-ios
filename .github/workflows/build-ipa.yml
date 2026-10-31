@@ -135,6 +135,11 @@ jobs:
           R="$R stepSrc=$(test -f vendor/src/libslic3r/Step.cpp && echo Y || echo N)"
           R="$R httpSrc=$(test -f vendor/src/libslic3r/Http.cpp && echo Y || echo N)"
           echo "::warning::[sim] $R"
+          U=$(nm -u build-core-sim/libslic3r.a 2>/dev/null | awk '{print $2}' \
+              | grep -E "Step|Http|MeshBoolean|IndexedMesh|BBL_Encrypt|nsvg|facet_id|locale8generator|get_intersections|is_macos" \
+              | sort -u | tr '\n' ' ')
+          echo "::warning::[sim-undef] $U"
+
 
       - name: Pack simulator bundle
         run: |
