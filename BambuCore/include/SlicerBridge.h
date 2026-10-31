@@ -44,6 +44,11 @@ typedef struct BBAABB {
 @property (nonatomic) double supportThreshold;
 /// 手绘强制支撑：STL 三角形索引。空数组表示不干预。
 @property (nonatomic, copy) NSArray<NSNumber *> *supportFacets;
+
+/// 模型缩放倍数（1.0 = 原尺寸）
+@property (nonatomic) double modelScale;
+/// 绕 Z 轴旋转角度（度）
+@property (nonatomic) double modelRotateZ;
 @property (nonatomic) BOOL brimEnabled;
 @property (nonatomic) double nozzleTemp;
 @property (nonatomic) double bedTemp;

@@ -57,7 +57,11 @@ final class SlicerViewModel: ObservableObject {
     @Published var layerPosition: Double = 1.0
     @Published var settings = SliceSettings() {
         didSet {
-            if oldValue.printer != settings.printer { rebuildScene() }
+            if oldValue.printer != settings.printer
+                || oldValue.modelScalePercent != settings.modelScalePercent
+                || oldValue.modelRotateZ != settings.modelRotateZ {
+                rebuildScene()
+            }
         }
     }
     @Published var errorMessage: String?
@@ -262,8 +266,14 @@ final class SlicerViewModel: ObservableObject {
         await importModel(from: first.url)
     }
 
+    /// 预览用的网格：带上缩放 / 旋转，和引擎侧保持同一套参数
+    var effectiveMesh: Mesh? {
+        mesh?.applying(scale: settings.modelScalePercent / 100.0,
+                       rotateZDeg: settings.modelRotateZ)
+    }
+
     private func rebuildScene() {
-        scene = SceneBuilder.buildScene(mesh: mesh, layers: layers, settings: settings)
+        scene = SceneBuilder.buildScene(mesh: effectiveMesh, layers: layers, settings: settings)
     }
 
     /// 文档选择器给的 URL 是安全作用域的，生命周期不可控，立刻拷进沙盒。

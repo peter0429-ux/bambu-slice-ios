@@ -56,6 +56,34 @@ struct SettingsSheet: View {
                     LabeledContent("热床", value: "\(Int(settings.bedWidth)) × \(Int(settings.bedDepth)) mm")
                 }
 
+                // ── 模型变换 ─────────────────────────────
+                Section {
+                    paramSlider("缩放",
+                                value: $settings.modelScalePercent,
+                                range: 10...400, step: 5,
+                                format: "%.0f %%",
+                                hint: "STL 单位搞错时用这里拉回来：英寸制的模型要 ×25.4，米制要 ×1000")
+                    HStack(spacing: 8) {
+                        ForEach([25.4, 50.0, 100.0, 200.0], id: \.self) { v in
+                            Button(String(format: "%.4g%%", v)) {
+                                settings.modelScalePercent = v
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                        Spacer()
+                    }
+                    paramSlider("绕 Z 旋转",
+                                value: $settings.modelRotateZ,
+                                range: 0...360, step: 5,
+                                format: "%.0f°",
+                                hint: "只转水平方向；朝上倒扣需要在建模软件里改")
+                } header: {
+                    Text("模型")
+                } footer: {
+                    Text("预览会立刻跟着变，切片也用同一套变换。")
+                }
+
                 Section("质量") {
                     VStack(alignment: .leading) {
                         LabeledContent("层高", value: String(format: "%.2f mm", settings.layerHeight))

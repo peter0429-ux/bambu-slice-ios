@@ -286,6 +286,29 @@ void on_status(const Slic3r::PrintBase::SlicingStatus &status, const ProgressFn 
     progress(static_cast<float>(status.percent) / 100.0f, status.text);
 }
 
+// 应用模型变换（缩放 / 绕 Z 旋转）。
+//
+// 必须在 place_on_bed **之前**做：摆盘会把模型居中并落到 z=0，
+// 如果先摆盘再缩放，z=0 的落点会跑掉，模型可能悬空或穿板。
+void apply_model_transform(Slic3r::Model &model, const Settings &s,
+                           std::vector<std::string> &warnings) {
+    const bool do_scale = std::fabs(s.model_scale - 1.0) > 1e-6;
+    const bool do_rot   = std::fabs(s.model_rotate_z) > 1e-6;
+    if (!do_scale && !do_rot) return;
+
+    try {
+        for (auto *obj : model.objects) {
+            if (obj == nullptr) continue;
+            if (do_rot)
+                obj->rotate(s.model_rotate_z * M_PI / 180.0, Slic3r::Z);
+            if (do_scale)
+                obj->scale(s.model_scale);
+        }
+    } catch (const std::exception &e) {
+        warnings.push_back(std::string("模型变换失败: ") + e.what());
+    }
+}
+
 // 把模型摆到热床中心并落到 z=0
 void place_on_bed(Slic3r::Model &model, const Settings &s) {
     const Slic3r::Vec2d center(s.bed_width * 0.5, s.bed_depth * 0.5);
@@ -398,6 +421,7 @@ bool slice(const std::string &path,
         }
 
         // 剔掉 keys_map 未初始化的枚举项，否则 export_gcode 写配置回显时空指针崩溃
+        apply_model_transform(model, s, warnings);
         place_on_bed(model, s);
 
         report(0.15f, "构建打印任务");

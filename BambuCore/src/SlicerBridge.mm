@@ -176,6 +176,8 @@ static NSError *makeError(BBSlicerErrorCode code, NSString *message) {
     s.infill_pattern      = toStd(settings.infillPattern);
     s.support_enabled     = settings.supportEnabled ? true : false;
     s.support_threshold   = settings.supportThreshold;
+    s.model_scale         = settings.modelScale > 0 ? settings.modelScale : 1.0;
+    s.model_rotate_z      = settings.modelRotateZ;
     for (NSNumber *n in settings.supportFacets) {
         if (n.intValue >= 0) s.support_facets.push_back(n.intValue);
     }

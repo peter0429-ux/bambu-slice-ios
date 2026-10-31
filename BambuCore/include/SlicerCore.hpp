@@ -53,6 +53,11 @@ struct Settings {
     /// 用户手绘「强制支撑」的面片索引（对应 STL 的三角形序号）。
     /// 空表示不做手动干预，完全由自动检测决定。
     std::vector<int> support_facets;
+
+    /// 模型变换（在摆盘之前应用）。预览端必须用同一套参数，
+    /// 否则「预览里的大小」和「切出来的大小」会不一致。
+    double model_scale    = 1.0;   // 1.0 = 原尺寸；常见用法是把英寸/米制的 STL 拉回毫米
+    double model_rotate_z = 0.0;   // 绕 Z 轴旋转（度）
     bool   brim_enabled       = false;
 
     double nozzle_temp        = 220.0;

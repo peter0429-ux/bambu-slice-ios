@@ -23,6 +23,36 @@ struct Mesh {
         self.boundsMax = boundsMax
     }
 
+    /// 缩放 + 绕 Z 轴旋转后的副本。
+    ///
+    /// 预览必须和引擎用**同一套**变换，否则会出现
+    /// 「预览里 20mm，切出来 10mm」这种错位。
+    /// 引擎侧对应 Libslic3rBackend.cpp 的 apply_model_transform()。
+    func applying(scale: Double, rotateZDeg: Double) -> Mesh {
+        let needScale = abs(scale - 1.0) > 1e-9
+        let needRot   = abs(rotateZDeg) > 1e-9
+        guard needScale || needRot else { return self }
+
+        let s = Float(scale)
+        let rad = Float(rotateZDeg * Double.pi / 180.0)
+        let c = cos(rad), sn = sin(rad)
+
+        var out = [SIMD3<Float>]()
+        out.reserveCapacity(positions.count)
+        var lo = SIMD3<Float>(repeating: .greatestFiniteMagnitude)
+        var hi = SIMD3<Float>(repeating: -.greatestFiniteMagnitude)
+
+        for p in positions {
+            let x = p.x * s, y = p.y * s, z = p.z * s
+            let r = SIMD3<Float>(x * c - y * sn, x * sn + y * c, z)
+            out.append(r)
+            lo = simd_min(lo, r)
+            hi = simd_max(hi, r)
+        }
+        if out.isEmpty { lo = .zero; hi = .zero }
+        return Mesh(positions: out, indices: indices, boundsMin: lo, boundsMax: hi)
+    }
+
     /// 从 ObjC++ 桥接层搬数据。整体 copy，不做逐元素装箱。
     init(bridge: BBMesh) {
         let vertexCount = bridge.vertexData.count / MemoryLayout<Float>.size

@@ -162,6 +162,12 @@ struct SliceSettings {
         }
     }
 
+    // ── 模型变换 ────────────────────────────────────────────
+    /// 缩放百分比（100 = 原尺寸）。STL 单位搞错时用它拉回来。
+    var modelScalePercent: Double = 100
+    /// 绕 Z 轴旋转（度）
+    var modelRotateZ: Double = 0
+
     /// 需要暂停的层号（从 1 开始）。空表示不暂停。
     /// 换色 / 埋螺母用：截图里 G-code 会插入 `M400 U1`。
     var pauseLayers: Set<Int> = []
@@ -211,6 +217,8 @@ struct SliceSettings {
         s.bedWidth = printer.bedWidth
         s.bedDepth = printer.bedDepth
         s.bedHeight = printer.bedHeight
+        s.modelScale = modelScalePercent / 100.0
+        s.modelRotateZ = modelRotateZ
 
         // 支撑细节参数全部走 overrides 直通。
         // 这些键在 Bambu 分支里都存在（已对着 PrintConfig.hpp 核对过），
