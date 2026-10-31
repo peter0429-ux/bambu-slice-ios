@@ -348,13 +348,38 @@ enum SceneBuilder {
             }
         }
 
-        // ── 2. 相机位置（container 空间），36° 俯角 / 45° 方位 ──
-        let dist = radius * 2.6
-        let elev: Float = .pi / 5
-        let azim: Float = .pi / 4
-        let eye = SCNVector3(center.x + dist * cos(elev) * sin(azim),
-                             center.y - dist * cos(elev) * cos(azim),
-                             center.z + dist * sin(elev))
+        // ── 2. 取景距离：按**实际宽高比**同时保证宽、高都装得下 ──
+        //
+        // 这里之前踩过一个坑：`SCNCamera.fieldOfView` 在
+        // `projectionDirection == .automatic`（默认）下，竖屏时是作用在
+        // **水平**方向的。于是竖直 FOV 被放大到 70° 以上，模型看起来又小又偏；
+        // 而按「竖直 FOV = 40°」推距离，横向又装不下、被裁掉。
+        //
+        // 现在显式设成 .vertical，用包围球半径 + sin 求距离，宽高取较大者。
+        if cam.camera == nil { cam.camera = SCNCamera() }
+        cam.camera?.projectionDirection = .vertical
+        cam.camera?.zNear = max(radius * 0.02, 0.05)
+        cam.camera?.zFar = Double(max(radius * 200, 5000))
+
+        let fovY = Float(cam.camera?.fieldOfView ?? 40) * .pi / 180
+        let aspect = Float(view.bounds.width) / max(Float(view.bounds.height), 1)
+        // bounds 还没布局时 width/height 可能是 0，给个手机竖屏的保守值
+        let safeAspect = (aspect > 0.1 && aspect < 10) ? aspect : 0.46
+        let fovX = 2 * atan(tan(fovY * 0.5) * safeAspect)
+
+        let sphereR = radius                     // 包围球半径 = 对角线一半
+        let distV = sphereR / max(sin(fovY * 0.5), 0.05)
+        let distH = sphereR / max(sin(fovX * 0.5), 0.05)
+        let dist = max(distV, distH) * 1.08      // 8% 留白，别贴着边
+
+        let elev: Float = .pi / 5                // 36° 俯角
+        let azim: Float = .pi / 4                // 45° 方位
+        let dir = SIMD3<Float>(cos(elev) * sin(azim),
+                               -cos(elev) * cos(azim),
+                               sin(elev))        // container 的 Z-up 方向
+        let eye = SCNVector3(center.x + dir.x * dist,
+                             center.y + dir.y * dist,
+                             center.z + dir.z * dist)
         let worldEye    = container.convertPosition(eye, to: nil)
         let worldTarget = container.convertPosition(center, to: nil)
 
@@ -384,9 +409,6 @@ enum SceneBuilder {
         let wasEnabled = view.allowsCameraControl
         view.allowsCameraControl = false
 
-        if cam.camera == nil { cam.camera = SCNCamera() }
-        cam.camera?.zNear = 0.05
-        cam.camera?.zFar = Double(max(radius * 200, 5000))
         cam.simdWorldTransform = m
 
         let cc = view.defaultCameraController
