@@ -185,6 +185,11 @@ extension SliceSmokeTests {
 
         var fast = SliceSettings()
         fast.layerHeight = 0.2
+        // ⚠️ 必须关掉「按层耗时自动降速」。
+        // 10mm 立方体每层只要一两秒，引擎会把每层强行拉到 5s，
+        // 于是总时长由冷却主导，速度参数的影响被完全掩盖
+        // （实测开冷却时 fast=338s / slow=420s，只差 24%）。
+        fast.slowDownForLayerCooling = false
         fast.outerWallSpeed = 200
         fast.innerWallSpeed = 200
         fast.sparseInfillSpeed = 200
