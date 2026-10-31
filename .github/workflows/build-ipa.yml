@@ -73,7 +73,7 @@ jobs:
           key: libslic3r-sim-v1-${{ hashFiles('core/**', 'scripts/build_deps_ios.sh', 'scripts/ios.toolchain.cmake') }}
 
       - name: Fetch BambuStudio source
-        if: steps.simlib.outputs.cache-hit != 'true'
+        # 不设 if：libslic3r 缓存命中时也需要 vendor 目录（打包 artifact 用）
         run: |
           curl -L --retry 3 -o bs.tar.gz "https://codeload.github.com/bambulab/BambuStudio/tar.gz/refs/heads/master"
           mkdir -p vendor
@@ -117,6 +117,42 @@ jobs:
           git add -f ci-log/core-sim-failure.txt
           git commit -m "ci: core-sim 失败日志 #${{ github.run_number }}" || true
           git push -f origin ci-log || true
+
+      # 无条件执行：缓存命中时也要重新组装 + 上传。
+      # 这里踩过两个坑：
+      #   1) Frameworks-sim 来自 simdeps 缓存，不含 libslic3r.a（那是 build-core-sim 的产物）
+      #   2) vendor 目录曾被 if 跳过，导致 tar -C vendor 直接失败且没有可读报错
+      # 所以每一步都显式检查并给出 ::error::。
+      - name: Pack simulator bundle
+        run: |
+          set -euo pipefail
+          rm -rf bundle-sim && mkdir -p bundle-sim
+
+          test -d Frameworks-sim \
+            || { echo "::error::缺 Frameworks-sim（simdeps 缓存未命中）"; exit 1; }
+          test -f build-core-sim/libslic3r.a \
+            || { echo "::error::缺 build-core-sim/libslic3r.a"; find . -maxdepth 4 -name 'libslic3r.a' | head; exit 1; }
+          test -f build-core-sim/libslic3r_version.h \
+            || { echo "::error::缺 build-core-sim/libslic3r_version.h"; find . -maxdepth 4 -name 'libslic3r_version.h' | head; exit 1; }
+          test -d vendor/src \
+            || { echo "::error::缺 vendor/src（源码没下载）"; exit 1; }
+
+          mkdir -p Frameworks-sim/libslic3r/lib Frameworks-sim/libslic3r/include
+          cp build-core-sim/libslic3r.a         Frameworks-sim/libslic3r/lib/
+          cp build-core-sim/libslic3r_version.h Frameworks-sim/libslic3r/include/
+
+          ls -lh Frameworks-sim/libslic3r/lib/ Frameworks-sim/libslic3r/include/
+          tar -czf bundle-sim/frameworks-sim.tgz Frameworks-sim
+          tar -czf bundle-sim/vendor-src.tgz -C vendor src
+          ls -lh bundle-sim/
+
+      - name: Upload core bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: core-bundle-sim
+          path: bundle-sim
+          if-no-files-found: error
+
 
   # ── 先编 libslic3r（deps 有缓存，命中时秒过）──────────────
   # .a 几十 MB 不进 git，用 artifact 在同一次 run 里传给 build job
@@ -273,37 +309,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 直接从 cache 恢复内核产物，不走 artifact。
-      # 之前走「打包 tgz → 下载 → 解包」，被 cp -R 嵌套、CMake 生成物缺失、
-      # 缓存和新打包互相覆盖坑了好几轮。改成恢复原始目录、自己拼装，路径一目了然。
-      - name: Restore simulator frameworks + build dir
-        uses: actions/cache/restore@v4
+      # 用 artifact 而不是 cache：
+      # 缓存 key 是内容哈希，出现同 key 两条不同体积的条目时 restore 行为不确定
+      # （实测出现过 fail-on-cache-miss 明明有 key 却恢复失败）。
+      # artifact 是同一次 run 内的确定性传递。
+      - name: Fetch simulator core bundle
+        uses: actions/download-artifact@v4
         with:
-          path: |
-            Frameworks-sim
-            build-core-sim
-          key: libslic3r-sim-v1-${{ hashFiles('core/**', 'scripts/build_deps_ios.sh', 'scripts/ios.toolchain.cmake') }}
-          fail-on-cache-miss: true
+          name: core-bundle-sim
+          path: core-bundle-sim
 
-      - name: Fetch BambuStudio source
+      - name: Unpack
         run: |
-          curl -L --retry 3 -o bs.tar.gz "https://codeload.github.com/bambulab/BambuStudio/tar.gz/refs/heads/master"
+          set -eux
+          ls -lh core-bundle-sim/
+          tar -xzf core-bundle-sim/frameworks-sim.tgz
           mkdir -p BambuCore/third_party
-          tar -xzf bs.tar.gz -C BambuCore/third_party --strip-components=1
+          tar -xzf core-bundle-sim/vendor-src.tgz -C BambuCore/third_party
           mv BambuCore/third_party/src BambuCore/third_party/vendor-src
-
-      - name: Assemble libslic3r artifacts
-        run: |
-          set -euo pipefail
-          mkdir -p Frameworks-sim/libslic3r/lib Frameworks-sim/libslic3r/include
-          test -f build-core-sim/libslic3r.a \
-            || { echo "::error::缺 build-core-sim/libslic3r.a"; find . -maxdepth 4 -name 'libslic3r.a' | head; exit 1; }
-          test -f build-core-sim/libslic3r_version.h \
-            || { echo "::error::缺 build-core-sim/libslic3r_version.h"; find . -maxdepth 4 -name 'libslic3r_version.h' | head; exit 1; }
-          cp build-core-sim/libslic3r.a         Frameworks-sim/libslic3r/lib/
-          cp build-core-sim/libslic3r_version.h Frameworks-sim/libslic3r/include/
-          ls -lh Frameworks-sim/libslic3r/lib/ Frameworks-sim/libslic3r/include/
-          lipo -info Frameworks-sim/libslic3r/lib/libslic3r.a || true
+          echo "--- 内核 ---"
+          ls -lh Frameworks-sim/libslic3r/lib/
+          ls -lh Frameworks-sim/libslic3r/include/
+          lipo -info Frameworks-sim/libslic3r/lib/libslic3r.a
 
       - name: Install XcodeGen
         run: brew install xcodegen
