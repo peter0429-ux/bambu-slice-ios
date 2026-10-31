@@ -29,6 +29,8 @@ jobs:
   # ─────────────────────────────────────────────────────────────
   core-sim:
     runs-on: macos-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -89,11 +91,34 @@ jobs:
       - name: 内核失败日志
         if: failure()
         run: |
+          # 注解里只能塞少量行，完整清单推到 ci-log 分支，本地 git fetch 可读
           for f in core-sim-cfg.log core-sim-build.log; do
             [ -f "$f" ] || continue
-            echo "=== $f ==="
-            grep -nE "error:|CMake Error|fatal error" "$f" | awk '!seen[$0]++' | head -40 || true
+            grep -nE "error:|CMake Error|fatal error" "$f" \
+              | awk '!seen[$0]++' | head -12 \
+              | sed "s/^/::error::[$f] /" || true
           done
+
+          mkdir -p ci-log
+          {
+            echo "# core-sim run #${{ github.run_number }} commit ${{ github.sha }}"
+            for f in core-sim-cfg.log core-sim-build.log; do
+              [ -f "$f" ] || continue
+              echo
+              echo "## $f"
+              grep -nE "error:|CMake Error|fatal error" "$f" | awk '!seen[$0]++' | head -60 || true
+              echo "--- 带上下文 ---"
+              grep -A3 -E "error:|fatal error" "$f" | head -80 || true
+            done
+          } > ci-log/core-sim-failure.txt
+          wc -l ci-log/core-sim-failure.txt || true
+
+          git config user.name "ci-bot"
+          git config user.email "ci-bot@users.noreply.github.com"
+          git checkout -B ci-log
+          git add -f ci-log/core-sim-failure.txt
+          git commit -m "ci: core-sim 失败日志 #${{ github.run_number }}" || true
+          git push -f origin ci-log || true
 
       - name: Pack simulator bundle
         if: steps.simlib.outputs.cache-hit != 'true'
