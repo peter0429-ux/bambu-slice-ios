@@ -54,10 +54,14 @@ static NSError *makeError(BBSlicerErrorCode code, NSString *message) {
     s.infillDensity      = 0.15;
     s.infillPattern      = @"grid";
     s.supportEnabled     = NO;
-    s.supportThreshold   = 45.0;
+    s.supportThreshold   = 30.0;   // 与 SliceSettings.swift 的默认值保持一致
     s.brimEnabled        = NO;
     s.nozzleTemp         = 220.0;
+    s.nozzleTempFirstLayer = 0.0;  // 0 = 与 nozzleTemp 相同
     s.bedTemp            = 60.0;
+    s.bedType            = @"Textured PEI Plate";
+    s.filamentType       = @"PLA";
+    s.maxVolumetricSpeed = 0.0;    // 0 = 按耗材类型取默认值
     s.printerProfile     = @"Bambu Lab A1 mini";
     s.bedWidth           = 180.0;
     s.bedDepth           = 180.0;
@@ -77,9 +81,13 @@ static NSError *makeError(BBSlicerErrorCode code, NSString *message) {
         _filamentDiameter = 1.75;
         _wallLoops = 2;
         _infillDensity = 0.15;
-        _supportThreshold = 45.0;
+        _supportThreshold = 30.0;
         _nozzleTemp = 220.0;
+        _nozzleTempFirstLayer = 0.0;
         _bedTemp = 60.0;
+        _bedType = @"Textured PEI Plate";
+        _filamentType = @"PLA";
+        _maxVolumetricSpeed = 0.0;
         _bedWidth = 180.0;
         _bedDepth = 180.0;
         _bedHeight = 180.0;
@@ -183,7 +191,11 @@ static NSError *makeError(BBSlicerErrorCode code, NSString *message) {
     }
     s.brim_enabled        = settings.brimEnabled ? true : false;
     s.nozzle_temp         = settings.nozzleTemp;
+    s.nozzle_temp_first_layer = settings.nozzleTempFirstLayer;
     s.bed_temp            = settings.bedTemp;
+    s.bed_type            = toStd(settings.bedType);
+    s.filament_type       = toStd(settings.filamentType);
+    s.max_volumetric_speed = settings.maxVolumetricSpeed;
     s.printer_profile     = toStd(settings.printerProfile);
     s.bed_width           = settings.bedWidth;
     s.bed_depth           = settings.bedDepth;

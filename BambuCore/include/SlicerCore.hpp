@@ -61,10 +61,34 @@ struct Settings {
     bool   brim_enabled       = false;
 
     double nozzle_temp        = 220.0;
+    /// 首层喷嘴温度。0 = 与 nozzle_temp 相同（大多数耗材都是这样）。
+    double nozzle_temp_first_layer = 0.0;
     double bed_temp           = 60.0;
+
+    /// 耗材类型（Bambu 的 filament_type 枚举字符串：PLA / PETG / ABS / ASA / TPU / PC / PA…）。
+    /// 决定密度和默认体积极限流速。传空串按 PLA 处理。
+    std::string filament_type = "PLA";
+
+    /// 体积极限流速（mm³/s）。0 = 按 filament_type 取内置默认值。
+    ///
+    /// 这个参数是**硬限速**：GCode.cpp 里
+    ///     speed = std::min(speed, filament_max_volumetric_speed / path.mm3_per_mm)
+    /// 对每一段挤出路径都成立。上游默认值只有 2.0，0.4mm 喷嘴 × 0.2mm 层高时
+    /// mm3_per_mm≈0.08，也就是最多 25mm/s —— 用户把外壁速度调到 200 也没用。
+    /// 不显式设置的话，速度面板基本是摆设。
+    double max_volumetric_speed = 0.0;
 
     // 机型预设。开启真内核后，这个名字会用于查找 vendor bundle 里的打印机预设。
     std::string printer_profile = "Bambu Lab A1 mini";
+    /// 热床板型（Bambu 的 curr_bed_type 枚举字符串）：
+    /// "Cool Plate" / "Engineering Plate" / "High Temp Plate" /
+    /// "Textured PEI Plate" / "Supertack Plate"
+    ///
+    /// 热床温度不是一个键：上游按板型分别存
+    /// cool_plate_temp / eng_plate_temp / hot_plate_temp /
+    /// textured_plate_temp / supertack_plate_temp。
+    /// 只写 bed_temp 而不写对应板型的键，等于没设温度。
+    std::string bed_type = "Textured PEI Plate";
     double bed_width  = 180.0;
     double bed_depth  = 180.0;
     double bed_height = 180.0;

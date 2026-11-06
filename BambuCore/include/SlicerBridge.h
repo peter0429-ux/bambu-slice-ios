@@ -51,7 +51,19 @@ typedef struct BBAABB {
 @property (nonatomic) double modelRotateZ;
 @property (nonatomic) BOOL brimEnabled;
 @property (nonatomic) double nozzleTemp;
+/// 首层喷嘴温度。0 = 与 nozzleTemp 相同。
+@property (nonatomic) double nozzleTempFirstLayer;
 @property (nonatomic) double bedTemp;
+/// 热床板型："Cool Plate" / "Engineering Plate" / "High Temp Plate" /
+/// "Textured PEI Plate" / "Supertack Plate"。
+/// 热床温度在主核心里按板型分开存，改板型会换掉实际下发的温度键。
+@property (nonatomic, copy) NSString *bedType;
+/// 耗材类型：PLA / PETG / ABS / ASA / TPU / PC / PA（不区分大小写）。
+/// 决定密度和体积极限流速。
+@property (nonatomic, copy) NSString *filamentType;
+/// 体积极限流速 mm³/s。0 = 按 filamentType 取默认值。
+/// 这是硬限速，调小会让速度面板的高值完全失效。
+@property (nonatomic) double maxVolumetricSpeed;
 @property (nonatomic, copy) NSString *printerProfile;
 @property (nonatomic) double bedWidth;
 @property (nonatomic) double bedDepth;

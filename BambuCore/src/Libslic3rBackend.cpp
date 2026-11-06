@@ -27,6 +27,7 @@
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 // ── [CP-1] 头文件路径 ────────────────────────────────────────
@@ -40,6 +41,7 @@
 #include "libslic3r/GCode/GCodeProcessor.hpp"
 #include "libslic3r/PrintConfig.hpp"
 #include "libslic3r/libslic3r.h"
+#include <tbb/global_control.h>
 
 // Bambu 分支把 G-code 生成拆成了 GCode::Generator（PrusaSlicer 没有）。
 // 有就用，没有就退回 Print::export_gcode()。
@@ -102,8 +104,84 @@ void set_bool(Slic3r::DynamicPrintConfig &cfg, const char *key, bool v) {
     set_str(cfg, key, v ? "1" : "0");
 }
 
-void set_bed_shape(Slic3r::DynamicPrintConfig &cfg, double w, double d) {
-    const std::string shape =
+// 耗材类型枚举真值（PrintConfig.cpp 的 filament_type enum_values）：
+//   PLA ABS ASA ASA-CF PETG PCTG TPU TPU-AMS PC PA PA-CF PA-GF PA6-CF
+//   PLA-CF PET-CF PETG-CF PVA HIPS PLA-AERO PPS PPS-CF PPA-CF PPA-GF
+//   ABS-GF ASA-AERO PE PP EVA PHA BVOH PE-CF PP-CF PP-GF
+// 注意这里是 gui_type = f_enum_open，传不认识的值**不会**被引擎拒绝，
+// 所以认不出来时必须自己报警告，不能指望引擎兜底。
+struct FilamentDefaults {
+    std::string type;                 // 写进 filament_type 的字符串
+    double      density;              // g/cm³
+    double      max_volumetric_speed; // mm³/s
+    bool        recognized;           // false = 用了兜底值，调用方要报警告
+};
+
+// 按值返回（结构只有几个字），避免 static 可变对象在并发下被踩。
+FilamentDefaults filament_defaults(const std::string &requested) {
+    std::string t;
+    t.reserve(requested.size());
+    for (char c : requested) t.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
+
+    // 数值来自官方预设 resources/profiles/BBL/filament/fdm_filament_*.json
+    if (t.empty() || t == "PLA" || t == "PLA BASIC") return { "PLA",  1.24, 12.0, true };
+    if (t == "PLA-CF" || t == "PLA AERO")            return { "PLA-CF", 1.24, 12.0, true };
+    if (t == "PETG" || t == "PET" || t == "PCTG")    return { "PETG", 1.27, 25.0, true };
+    if (t == "PETG-CF" || t == "PET-CF")             return { "PETG", 1.27, 25.0, true };
+    if (t == "ABS" || t == "ABS-GF")                 return { "ABS",  1.04, 28.6, true };
+    if (t == "ASA" || t == "ASA-CF")                 return { "ASA",  1.04, 28.6, true };
+    if (t == "TPU" || t == "TPU-AMS")                return { "TPU",  1.24, 15.0, true };
+    if (t == "PC")                                   return { "PC",   1.04, 18.0, true };
+    if (t == "PA" || t == "PA-CF" || t == "PA-GF" ||
+        t == "PA6-CF")                               return { "PA",   1.04,  8.0, true };
+
+    // 认不出来：数值退回 PLA，但把原字符串写回去，方便用户在 G-code 头部
+    // 看到自己传的值，同时由调用方发警告。
+    return { requested.empty() ? std::string("PLA") : requested, 1.24, 12.0, false };
+}
+
+// 限制 TBB 的线程数。
+//
+// 手机上别让 TBB 起满核：A 系列 6 核跑满会让整个机身发烫、降频，
+// 反而比 2~3 线程慢，而且峰值内存也会翻倍（每层并行切片的结果要先攒住）。
+//
+// ⚠️ 这**不是** print config 项。原来写的 set_int(cfg, "threads", 2) 里
+// "threads" 在上游 add() 出现 0 次，has() 检查直接跳过 —— 一直没生效。
+// 真正管用的是 tbb::global_control，且必须在 TBB 首次起线程池之前创建
+// （一旦初始化过，后续再建 global_control 只对新的 arena 生效）。
+//
+// 生命周期：global_control 是 RAII 对象，析构时恢复原限制。
+// 用 static 保证它活到进程结束，等于把整个进程的并行度钉死在上限上。
+void limit_tbb_threads() {
+    static std::once_flag once;
+    std::call_once(once, [] {
+        const unsigned hw = std::thread::hardware_concurrency();
+        // 上限 4：A17 是 6 核（2 性能 + 4 能效），但性能核只有 2 个，
+        // 开超过 4 个线程多在能效核上排队，切片反而更慢。
+        const size_t n = std::max<size_t>(1, std::min<size_t>(4, hw == 0 ? 2 : hw));
+        // 故意 leak：进程结束前不需要释放，也避免静态析构顺序问题。
+        new tbb::global_control(tbb::global_control::max_allowed_parallelism, n);
+    });
+}
+
+// 板型字符串 → BedType。
+//
+// 注意枚举顺序不是 UI 顺序：
+//   enum_values  = Cool / Engineering / High Temp / Textured PEI / Supertack
+//   enum 常量    = btPC / btEP / btPEI(eng?) / btPTE / btSuperTack
+// 上游的 enum_keys_map 里 "Engineering Plate"→btEP、"High Temp Plate"→btPEI、
+// "Textured PEI Plate"→btPTE，和 enum_values 的下标不一致。
+// 所以这里按**字符串**匹配，绝不按下标推。
+Slic3r::BedType bed_type_from_string(const std::string &s) {
+    if (s == "Cool Plate")          return Slic3r::btPC;
+    if (s == "Engineering Plate")   return Slic3r::btEP;
+    if (s == "High Temp Plate")     return Slic3r::btPEI;
+    if (s == "Textured PEI Plate")  return Slic3r::btPTE;
+    if (s == "Supertack Plate")     return Slic3r::btSuperTack;
+    return Slic3r::btPTE;           // 默认 Textured PEI，和桌面版新机一致
+}
+
+void set_bed_shape(Slic3r::DynamicPrintConfig &cfg, double w, double d) {    const std::string shape =
         "0x0," + std::to_string(w) + "x0," + std::to_string(w) + "x" + std::to_string(d) +
         ",0x" + std::to_string(d);
     // [CP-2] PrusaSlicer 2.6 起 bed_shape 改名为 printable_area；
@@ -168,27 +246,52 @@ Slic3r::DynamicPrintConfig make_config(const Settings &s, std::vector<std::strin
     set_double(cfg, "nozzle_diameter", s.nozzle_diameter);
     set_double(cfg, "filament_diameter", s.filament_diameter);
     set_bed_shape(cfg, s.bed_width, s.bed_depth);
-    set_double(cfg, "max_print_height", s.bed_height);
+    // 可打印高度键名是 printable_height，不是 max_print_height（后者 add() 0 次）。
+    set_double(cfg, "printable_height", s.bed_height);
     set_str(cfg, "gcode_flavor", "marlin2");   // Bambu 机器用 "marlin2"，老机器 "marlin"
     set_bool(cfg, "use_relative_e_distances", false);
     set_bool(cfg, "silent_mode", true);
-    set_int(cfg, "threads", 2);             // 手机上别让 TBB 起满核，热和内存都吃不消
+    // threads 不是 print config 项（add() 0 次），内核线程数由
+    // tbb::global_control 或 TBB_NUM_THREADS 控制，跟动态配置没关系。
+    // 原来那行 set_int(cfg, "threads", 2) 一直被静默跳过 —— 见 limit_threads()。
 
     // 质量
     set_double(cfg, "layer_height", s.layer_height);
-    set_double(cfg, "first_layer_height", s.first_layer_height);
-    set_int(cfg, "perimeters", s.wall_loops);
-    set_double(cfg, "fill_density", s.infill_density * 100.0);   // libslic3r 用百分比
-    set_str(cfg, "fill_pattern", s.infill_pattern);
-    set_double(cfg, "perimeter_speed", 120);
-    set_double(cfg, "infill_speed", 200);
-    set_double(cfg, "travel_speed", 400);
+    // ⚠️ 键名是 initial_layer_print_height，不是 first_layer_height。
+    //    旧名在上游 add() 出现 0 次，set_str 的 has() 检查会静默跳过 ——
+    //    首层高度一直没有生效，永远是 0.2，贴不住板。
+    set_double(cfg, "initial_layer_print_height", s.first_layer_height);
+    // perimeters / fill_density / fill_pattern 这三个 PrusaSlicer 旧名在
+    // Bambu 分支里**不存在**（add() 全部 0 次），真正生效的是下面新名那一段。
+    // 保留旧调用只会让人误以为设过了，所以删掉。
+    // 同理 perimeter_speed / infill_speed 也不存在。
 
-    // 温度
-    set_double(cfg, "temperature", s.nozzle_temp);
-    set_double(cfg, "first_layer_temperature", s.nozzle_temp);
-    set_double(cfg, "bed_temperature", s.bed_temp);
-    set_double(cfg, "first_layer_bed_temperature", s.bed_temp);
+    // 温度：Bambu 的键是 nozzle_temperature / nozzle_temperature_initial_layer
+    // （coInts，按挤出机存）。PrusaSlicer 的 temperature / first_layer_temperature /
+    // bed_temperature 在这里 add() 出现 0 次 —— 之前温度根本没下发过。
+    const int nozzle_t  = static_cast<int>(std::lround(s.nozzle_temp));
+    const int nozzle_t0 = (s.nozzle_temp_first_layer > 0.0)
+                              ? static_cast<int>(std::lround(s.nozzle_temp_first_layer))
+                              : nozzle_t;
+    set_int(cfg, "nozzle_temperature", nozzle_t);
+    set_int(cfg, "nozzle_temperature_initial_layer", nozzle_t0);
+
+    // 热床温度按板型分开存，没有统一的 bed_temperature 键。
+    // 用 static_cast 显式转 BedType 取键名，避免和上游枚举顺序脱节。
+    const Slic3r::BedType bt = bed_type_from_string(s.bed_type);
+    {
+        const int bed_t = static_cast<int>(std::lround(s.bed_temp));
+        // 注意 get_bed_temp_key 返回 std::string（不是 const char*），
+        // 板型非法时返回空串。
+        const std::string k       = Slic3r::get_bed_temp_key(bt);
+        const std::string k_first = Slic3r::get_bed_temp_1st_layer_key(bt);
+        if (!k.empty())       set_int(cfg, k.c_str(), bed_t);
+        if (!k_first.empty()) set_int(cfg, k_first.c_str(), bed_t);
+        // 板型本身也要设：引擎按 curr_bed_type 决定用哪一档温控逻辑，
+        // 不设就是默认 btPC（Cool Plate 35℃）。
+        if (!set_str(cfg, "curr_bed_type", s.bed_type))
+            warnings.push_back("无法指定 curr_bed_type: " + s.bed_type);
+    }
 
     // ── Bambu 分支特有：耗材/挤出机索引 ────────────────────
     // libslic3r 里大量用 print_config->nozzle_diameter.get_at(wall_filament - 1)
@@ -197,7 +300,8 @@ Slic3r::DynamicPrintConfig make_config(const Settings &s, std::vector<std::strin
     set_int(cfg, "wall_filament", 1);
     set_int(cfg, "solid_infill_filament", 1);
     set_int(cfg, "sparse_infill_filament", 1);
-    set_int(cfg, "wipe_tower_filament", 1);
+    // wipe_tower_filament 这个键不存在（add() 0 次），一直是无效行，删掉。
+    // 擦料塔走 wipe_tower_extruder 之类由打印机预设管，单挤出机场景不用碰。
 
     // ── 周界生成器：先用经典算法 ──────────────────────────
     // Arachne（变宽挤出）对参数完整性要求很高，缺项就崩；经典算法稳得多。
@@ -218,16 +322,31 @@ Slic3r::DynamicPrintConfig make_config(const Settings &s, std::vector<std::strin
     set_double(cfg, "top_surface_line_width", s.nozzle_diameter);
     set_double(cfg, "support_line_width", s.nozzle_diameter);
 
-    // ── 耗材类型 / 热床 ───────────────────────────────────
-    set_str(cfg, "filament_type", "PLA");
+    // ── 耗材类型 / 密度 / 体积极限流速 ─────────────────────
+    // filament_type 以前硬编码成 "PLA"，PETG/ABS 用户会打废件（温度、风扇、
+    // 附着方式全都按 PLA 走）。现在按 s.filament_type 走，密度和限速也跟着切。
+    const FilamentDefaults fd = filament_defaults(s.filament_type);
+    if (!fd.recognized)
+        warnings.push_back("不认识的耗材类型: " + s.filament_type +
+                           "（密度/限速按 PLA 处理，打印前请核对温度）");
+    if (!set_str(cfg, "filament_type", fd.type))
+        warnings.push_back("无法指定 filament_type: " + fd.type);
     // 密度不设的话 G-code 头部 weight 就是 0，UI 的耗材重量也拿不到
-    set_double(cfg, "filament_density", 1.24);      // PLA g/cm3
+    set_double(cfg, "filament_density", fd.density);      // g/cm³
     set_double(cfg, "filament_cost", 0.0);
     set_double(cfg, "filament_flow_ratio", 0.98);
-    set_str(cfg, "curr_bed_type", "Textured PEI Plate");
 
-    // ── Bambu 新键名（旧名 perimeters/fill_density 走 legacy 映射，
-    //    这里显式用新名，避免映射过程中的语义偏差）
+    // ⚠️ 体积极限流速必须显式设。上游默认 2.0mm³/s，是**硬限速**：
+    //    GCode.cpp 里每一段挤出路径都跑
+    //        speed = min(speed, filament_max_volumetric_speed / path.mm3_per_mm)
+    //    0.4mm 喷嘴 × 0.2mm 层高时 mm3_per_mm≈0.08，2.0 只能跑 25mm/s。
+    //    用户把外壁速度调到 200，实际还是 25 —— 速度面板等于摆设。
+    const double vol_speed = (s.max_volumetric_speed > 0.0) ? s.max_volumetric_speed
+                                                            : fd.max_volumetric_speed;
+    set_double(cfg, "filament_max_volumetric_speed", vol_speed);
+
+    // ── Bambu 新键名（旧名 perimeters/fill_density/fill_pattern 在上游
+    //    根本不存在，add() 出现 0 次，这里用真正生效的键名）
     set_int(cfg, "wall_loops", s.wall_loops);
     set_double(cfg, "sparse_infill_density", s.infill_density * 100.0);
     set_str(cfg, "sparse_infill_pattern", s.infill_pattern);
@@ -343,6 +462,7 @@ bool slice(const std::string &path,
            std::string &error) {
     g_cancel.store(false);
     silence_boost_log();
+    limit_tbb_threads();
 
     auto report = [&](float f, const std::string &stage) {
         if (progress) progress(f, stage);

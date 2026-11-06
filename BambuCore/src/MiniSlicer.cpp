@@ -538,10 +538,15 @@ public:
         m_out << fmt("; layer_height: %.2f  walls: %d  infill: %.0f%%\n",
                      m_s.layer_height, m_s.wall_loops, m_s.infill_density * 100.0);
         m_out << ";\n";
+        // 首层温度与其余层分开：nozzle_temp_first_layer == 0 表示跟随主温度。
+        // 与真内核一致（真内核读 nozzle_temperature_initial_layer）。
+        const double t0 = (m_s.nozzle_temp_first_layer > 0) ? m_s.nozzle_temp_first_layer
+                                                           : m_s.nozzle_temp;
         m_out << fmt("M140 S%.0f\n", m_s.bed_temp);
-        m_out << fmt("M104 S%.0f\n", m_s.nozzle_temp);
+        m_out << fmt("M104 S%.0f ; first layer nozzle\n", t0);
         m_out << "G28 ; home\n";
-        m_out << fmt("M109 S%.0f ; wait nozzle\n", m_s.nozzle_temp);
+        m_out << fmt("M190 S%.0f ; wait bed\n", m_s.bed_temp);
+        m_out << fmt("M109 S%.0f ; wait nozzle\n", t0);
         m_out << "G90 ; absolute positioning\n";
         m_out << "M82 ; absolute extrusion\n";
         m_out << "G92 E0\n";
@@ -551,6 +556,13 @@ public:
     void begin_layer(size_t index, double z) {
         m_out << fmt(";LAYER:%zu\n", index);
         m_out << fmt(";Z:%.2f\n", z);
+        // 首层用首层温度；从第 2 层起切回主温度。
+        // 不切回去的话喷嘴会一直按首层温度打（ABS 首层 260 / 其余 270 这类会差 10℃）。
+        if (index == 1 && m_s.nozzle_temp_first_layer > 0
+            && std::abs(m_s.nozzle_temp_first_layer - m_s.nozzle_temp) > 0.5) {
+            m_out << fmt("M104 S%.0f ; back to normal nozzle temp\n", m_s.nozzle_temp);
+            m_out << fmt("M109 S%.0f\n", m_s.nozzle_temp);
+        }
         m_out << fmt("G1 Z%.3f F1200\n", z);
     }
 
@@ -628,6 +640,21 @@ private:
 // ─────────────────────────────────────────────────────────────
 
 void request_cancel() { g_cancel.store(true); }
+
+// 耗材密度 g/cm³。数值与真内核的 filament_defaults() 保持一致，
+// 这样切引擎时耗材重量不会突然对不上。认不出来按 PLA 处理。
+double filament_density_g_cm3(const std::string &type) {
+    std::string t;
+    t.reserve(type.size());
+    for (char c : type) t.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
+    if (t == "PETG" || t == "PET" || t == "PCTG" ||
+        t == "PETG-CF" || t == "PET-CF") return 1.27;
+    if (t == "ABS" || t == "ABS-GF" ||
+        t == "ASA" || t == "ASA-CF" ||
+        t == "PC"  || t == "PA" || t == "PA-CF" ||
+        t == "PA-GF" || t == "PA6-CF") return 1.04;
+    return 1.24;   // PLA / PLA-CF / TPU
+}
 
 bool load(const std::string &path, MeshData &out, std::string &error) {
     std::vector<Tri> tris;
@@ -770,7 +797,9 @@ bool slice(const std::string &path,
     out.duration_seconds = em.duration();
     out.filament_mm = em.filament_mm();
     const double vol_mm3 = em.filament_mm() * kPi * std::pow(s.filament_diameter * 0.5, 2);
-    out.filament_grams = vol_mm3 * 0.00124;   // PLA 密度 1.24 g/cm³
+    // 密度按耗材类型取。以前这里写死 0.00124（PLA），换 PETG/ABS 时
+    // 耗材重量就一直是 PLA 的值，跟真内核的行为对不上。
+    out.filament_grams = vol_mm3 * 0.001 * filament_density_g_cm3(s.filament_type);
     out.layer_count = layer_count;
     out.backend = "mini-ref";
     out.warnings.push_back("参考引擎：G-code 仅供预览，请勿直接上机打印");

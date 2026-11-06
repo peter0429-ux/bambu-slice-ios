@@ -327,11 +327,73 @@ struct SettingsSheet: View {
                          + "避免喷嘴停在上一层高度刮到已打好的部分。")
                 }
 
-                Section("材料") {
+                Section("耗材") {
+                    // 换耗材类型会把温度/密度/限速一起换成官方预设值，
+                    // 因为这三项是绑定的：只换温度不改密度，G-code 头部的耗材重量是错的。
+                    Picker("类型", selection: $settings.filamentType) {
+                        ForEach(FilamentKind.all) { kind in
+                            Text(kind.displayName).tag(kind.id)
+                        }
+                    }
+                    // 注意：iOS 16 只有单参数的 onChange(of:perform:)，
+                    // 双参数版本（oldValue, newValue）是 iOS 17 才有的。
+                    .onChange(of: settings.filamentType) { newValue in
+                        guard let kind = FilamentKind.find(newValue) else { return }
+                        settings.nozzleTemp = kind.nozzleTemp
+                        settings.bedTemp = kind.bedTemp
+                        settings.maxVolumetricSpeed = kind.maxVolumetricSpeed
+                    }
+
+                    Picker("打印板", selection: $settings.bedType) {
+                        ForEach(BedPlate.all) { plate in
+                            Text(plate.displayName).tag(plate.id)
+                        }
+                    }
+
+                    LabeledContent("密度",
+                                   value: String(format: "%.2f g/cm³",
+                                                 FilamentKind.find(settings.filamentType)?.density ?? 1.24))
+                }
+
+                Section("温度") {
                     Stepper("喷嘴温度：\(Int(settings.nozzleTemp))℃",
                             value: $settings.nozzleTemp, in: 180...300, step: 5)
+
+                    // 首层单独给温：ABS/PC 通常首层低 5~10℃ 防翘边卷边。
+                    // 0 = 跟其余层同温，UI 上显示成"跟随"。
+                    Stepper(value: $settings.nozzleTempFirstLayer, in: 0...300, step: 5) {
+                        HStack {
+                            Text("首层温度")
+                            Spacer()
+                            Text(settings.nozzleTempFirstLayer == 0
+                                 ? "跟随（\(Int(settings.nozzleTemp))℃）"
+                                 : "\(Int(settings.nozzleTempFirstLayer))℃")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
                     Stepper("热床温度：\(Int(settings.bedTemp))℃",
-                            value: $settings.bedTemp, in: 0...110, step: 5)
+                            value: $settings.bedTemp, in: 0...120, step: 5)
+
+                    // 体积极限流速是硬限速：引擎在生成每段刀路时都会
+                    // min(设定速度, 限速 / 每毫米体积)。0.4 喷嘴 × 0.2 层高时
+                    // 每毫米约 0.08mm³，限速 12 相当于上限 150mm/s —— 速度面板
+                    // 设到 200 也会被这里压住。所以要显式露出来，不能让用户
+                    // 以为"设了高速却没变快"是 bug。
+                    Stepper(value: $settings.maxVolumetricSpeed, in: 0...60, step: 0.5) {
+                        HStack {
+                            Text("体积极限流速")
+                            Spacer()
+                            Text(settings.maxVolumetricSpeed == 0
+                                 ? "自动（\(String(format: "%.1f", FilamentKind.find(settings.filamentType)?.maxVolumetricSpeed ?? 12))）"
+                                 : String(format: "%.1f mm³/s", settings.maxVolumetricSpeed))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Text("速度面板的高值会被这一项压住，调不动速度时先看这里。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
                     LabeledContent("喷嘴直径", value: String(format: "%.1f mm", settings.nozzleDiameter))
                 }
 

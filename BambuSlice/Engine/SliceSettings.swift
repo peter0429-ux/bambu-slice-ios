@@ -1,5 +1,48 @@
 import Foundation
 
+/// 耗材类型的完整清单 + 每种的推荐参数。
+///
+/// 数值来自 Bambu Studio 官方预设
+/// `resources/profiles/BBL/filament/fdm_filament_*.json`，
+/// 不是估算值。温度是喷嘴温度，床温按「Textured PEI Plate」那一档给的。
+struct FilamentKind: Identifiable, Hashable {
+    let id: String          // 写进 filament_type 的值
+    let displayName: String
+    let nozzleTemp: Double
+    let bedTemp: Double
+    let maxVolumetricSpeed: Double
+    /// 密度 g/cm³。G-code 头部的耗材重量靠它，缺了就是 0。
+    let density: Double
+
+    static let all: [FilamentKind] = [
+        .init(id: "PLA",  displayName: "PLA",   nozzleTemp: 220, bedTemp: 55,  maxVolumetricSpeed: 12,   density: 1.24),
+        .init(id: "PETG", displayName: "PETG",  nozzleTemp: 255, bedTemp: 80,  maxVolumetricSpeed: 25,   density: 1.27),
+        .init(id: "ABS",  displayName: "ABS",   nozzleTemp: 270, bedTemp: 90,  maxVolumetricSpeed: 28.6, density: 1.04),
+        .init(id: "ASA",  displayName: "ASA",   nozzleTemp: 260, bedTemp: 90,  maxVolumetricSpeed: 28.6, density: 1.04),
+        .init(id: "TPU",  displayName: "TPU",   nozzleTemp: 240, bedTemp: 35,  maxVolumetricSpeed: 15,   density: 1.24),
+        .init(id: "PC",   displayName: "PC",    nozzleTemp: 280, bedTemp: 110, maxVolumetricSpeed: 18,   density: 1.04),
+        .init(id: "PA",   displayName: "PA",    nozzleTemp: 290, bedTemp: 100, maxVolumetricSpeed: 8,    density: 1.04),
+    ]
+
+    static func find(_ id: String) -> FilamentKind? {
+        all.first { $0.id.caseInsensitiveCompare(id) == .orderedSame }
+    }
+}
+
+/// 热床板型 → 主内核的 curr_bed_type 枚举字符串。
+struct BedPlate: Identifiable, Hashable {
+    let id: String
+    let displayName: String
+
+    static let all: [BedPlate] = [
+        .init(id: "Textured PEI Plate", displayName: "纹理 PEI 板"),
+        .init(id: "High Temp Plate",    displayName: "高温板"),
+        .init(id: "Engineering Plate",  displayName: "工程板"),
+        .init(id: "Cool Plate",         displayName: "低温板"),
+        .init(id: "Supertack Plate",    displayName: "Supertack 板"),
+    ]
+}
+
 struct PrinterPreset: Identifiable, Hashable {
     let id: String
     let name: String
@@ -177,6 +220,23 @@ struct SliceSettings {
     var supportFacets: Set<Int> = []
     var nozzleTemp: Double = 220
     var bedTemp: Double = 60
+
+    /// 首层喷嘴温度。0 = 与 nozzleTemp 相同。
+    /// 实际上大多数耗材首层和其余层同温，只有 ABS/PC 之类的首层会低 5~10℃。
+    var nozzleTempFirstLayer: Double = 0
+
+    /// 耗材类型。决定密度与体积极限流速（都影响 G-code）。
+    /// 取值必须落在 Bambu 的 filament_type 枚举里，见 FilamentType.all。
+    var filamentType: String = "PLA"
+
+    /// 热床板型。热床温度在主核心里按板型分开存，
+    /// 改这里会换掉实际下发的温度键（current 只影响温控策略，不影响用户填的温度值）。
+    var bedType: String = "Textured PEI Plate"
+
+    /// 体积极限流速 mm³/s。0 = 按耗材类型取默认值。
+    /// 这是硬限速：太小会让速度面板上的高速全部失效。
+    var maxVolumetricSpeed: Double = 0
+
     var printer: PrinterPreset = PrinterPreset.all[0]
 
     var bedWidth: Double { printer.bedWidth }
@@ -212,7 +272,11 @@ struct SliceSettings {
         s.supportThreshold = supportThreshold
         s.brimEnabled = brimEnabled
         s.nozzleTemp = nozzleTemp
+        s.nozzleTempFirstLayer = nozzleTempFirstLayer
         s.bedTemp = bedTemp
+        s.bedType = bedType
+        s.filamentType = filamentType
+        s.maxVolumetricSpeed = maxVolumetricSpeed
         s.printerProfile = printer.name
         s.bedWidth = printer.bedWidth
         s.bedDepth = printer.bedDepth
